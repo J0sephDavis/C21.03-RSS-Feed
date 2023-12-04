@@ -8,6 +8,12 @@
 #include "curl/curl.h"
 #include "curl/easy.h"
 namespace rx = rapidxml;
+//TODO: have a list of regular expressions and an RSS feed that is tailored to only find similar files to that one
+//Then, record the last downloaded file & download if they differ in titles
+//TODO: try using a c++ wrappper/binder for curl
+//TODO: better quit functions & logging for what has been done
+//TODO: store program data, such as the regular expressions & rss links, as well as download history in JSON/CSV files
+
 
 //print the field of the node given by value
 void print_by_value(rx::xml_node<> *node, std::string key) {
@@ -65,13 +71,11 @@ int main(int argc, char** argv) {
 			};
 		}
 	}
-	std::cout << "DOWNLOADS:\n";
-	for (auto link : download_links) {
-		std::cout << link << "\n";
-	}
+	//downloads
 	CURL *curl_handle;
 	curl_global_init(CURL_GLOBAL_ALL);
 	for (auto link : download_links) {
+		std::cout << "DOWNLOADING:" << link << "\n";
 		std::string file_name(link);
 		auto iterator = file_name.find('/');
 		for (;iterator != std::string::npos; iterator = file_name.find('/'))
@@ -80,12 +84,11 @@ int main(int argc, char** argv) {
 		curl_handle = curl_easy_init();
 		FILE *pagefile;
 		curl_easy_setopt(curl_handle, CURLOPT_URL, link.c_str());
-		curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
+//		curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
 		curl_easy_setopt(curl_handle, CURLOPT_NOPROGRESS, 1L);
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
 		pagefile = fopen(file_name.c_str(), "wb");
 		if (pagefile) {
-			std::cout << "good file";
 			curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, pagefile);
 			curl_easy_perform(curl_handle);
 			fclose(pagefile);
