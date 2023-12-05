@@ -206,6 +206,7 @@ inline OutIt print_pi_node(OutIt out, const xml_node<Ch> *node, int flags, int i
             {
                 if (attribute->name() && attribute->value())
                 {
+		    (void)flags; //to get rid of compiler unused variable warning 
                     // Print attribute name
                     *out = Ch(' '), ++out;
                     out = copy_chars(attribute->name(), attribute->name() + attribute->name_size(), out);
