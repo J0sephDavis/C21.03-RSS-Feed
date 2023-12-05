@@ -1,4 +1,6 @@
 #include <cstdlib>
+#include <curlpp/Exception.hpp>
+#include <curlpp/OptionBase.hpp>
 #include <tuple>
 #include <iostream>
 #include <rapidxml.hpp>
@@ -6,8 +8,7 @@
 #include <rapidxml_print.hpp>
 #include "regex.c"
 #include <curlpp/Easy.hpp>
-//#include "curl/curl.h"
-//#include "curl/easy.h"
+#include <curlpp/Options.hpp>
 namespace rx = rapidxml;
 //TODO: have a list of regular expressions and an RSS feed that is tailored to only find similar files to that one
 //Then, record the last downloaded file & download if they differ in titles
@@ -38,7 +39,7 @@ bool match_title(std::string Regular_Expression, std::string title) {
 	return retval;
 }
 //used with curl to download the file
-static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
+static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
 	return written;
 }
@@ -72,31 +73,39 @@ int main(int argc, char** argv) {
 			};
 		}
 	}
+
 	//downloads
-	CURL *curl_handle;
-	curl_global_init(CURL_GLOBAL_ALL);
+	//curlpp::Cleaner is not needed, obsolete according to the header files
+//	curl_global_init(CURL_GLOBAL_ALL); //TODO
 	for (auto link : download_links) {
 		std::cout << "DOWNLOADING:" << link << "\n";
 		std::string file_name(link);
 		auto iterator = file_name.find('/');
+		//clean the name of any slashes
 		for (;iterator != std::string::npos; iterator = file_name.find('/'))
 			file_name.replace(iterator, 1, "");
-		//taken from a curl example on their webpage
-		curl_handle = curl_easy_init();
-		FILE *pagefile;
-		curl_easy_setopt(curl_handle, CURLOPT_URL, link.c_str());
-//		curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
-		curl_easy_setopt(curl_handle, CURLOPT_NOPROGRESS, 1L);
-		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
-		pagefile = fopen(file_name.c_str(), "wb");
-		if (pagefile) {
-			curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, pagefile);
-			curl_easy_perform(curl_handle);
-			fclose(pagefile);
+		//-----
+		try {
+			curlpp::Easy request;
+			//set options, URL, Write callback function, progress output, &c
+			request.setOpt<curlpp::options::Url>(link);
+			request.setOpt<curlpp::options::NoProgress>(true);
+			request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
+			//write to the file
+			FILE* pagefile = fopen(file_name.c_str(), "wb");
+			if (pagefile) {
+				request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
+				request.perform();
+			}
 		}
-		curl_easy_cleanup(curl_handle);
+		catch (curlpp::LogicError &e) {
+			std::cout << e.what() << std::endl /*endl to flush the stream, might matter*/;
+			exit(EXIT_FAILURE);
+		}
+		catch (curlpp::RuntimeError &e) {
+			std::cout << e.what() << std::endl;
+			exit(EXIT_FAILURE);
+		}
 	}
-	curl_global_cleanup();
-	//
 	exit(EXIT_SUCCESS);
 }
