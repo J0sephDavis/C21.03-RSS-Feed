@@ -8,15 +8,17 @@ project(RSS-Feed
 add_executable(RSS-Feed 
 	src/main.cc
 )
+find_package( CURL REQUIRED )
 
 target_include_directories(RSS-Feed
-	PRIVATE src rapidxml-1.13
+	PRIVATE src rapidxml-1.13 curlpp_v81
 )
 
 target_link_libraries(RSS-Feed 
-	PRIVATE curlpp
 	INTERFACE rapidxml
+	PUBLIC CURL::libcurl
+	PUBLIC curlpp
 )
 set_target_properties(RSS-Feed PROPERTIES CXX_STANDARD 20)
 #fetchContent & find_package failed to properly link libcurlpp....
-target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic -lcurlpp)
+target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic)
