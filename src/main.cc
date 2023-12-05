@@ -15,6 +15,8 @@ namespace rx = rapidxml;
 namespace fs = std::filesystem;
 //TODO: better quit functions & logging, for what has been done by the program
 //TODO: make an easy way for the user to update the config
+//TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
+
 //used with curl to download the file
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
@@ -173,14 +175,11 @@ class rssFeed {
 		}
 };
 #define CONFIG_NAME "rss-config.xml"
-int main(int argc, char** argv) {
+int main(void) {
 	{
 		if (!fs::exists(CONFIG_NAME)) {
 			std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 			exit(EXIT_FAILURE);
-			//remove compiler warning for unused variable.
-			(void)argv[1];
-			(void)argc;
 		}
 		rx::xml_document<> config_document;
 		rx::file<> config_file(CONFIG_NAME);
