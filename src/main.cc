@@ -13,10 +13,8 @@
 #include <filesystem>
 namespace rx = rapidxml;
 namespace fs = std::filesystem;
-//TODO: try using a c++ wrappper/binder for curl
-//TODO: better quit functions & logging for what has been done
-//TODO: store program data, such as the regular expressions & rss links, as well as download history in JSON/CSV files
-
+//TODO: better quit functions & logging, for what has been done by the program
+//TODO: make an easy way for the user to update the config
 //used with curl to download the file
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
@@ -24,37 +22,49 @@ static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 }
 //downloads a file
 bool downloadFile(std::string url, std::string fileName) {
-		try {
-			curlpp::Easy request;
-			//set options, URL, Write callback function, progress output, &c
-			request.setOpt<curlpp::options::Url>(url);
-			request.setOpt<curlpp::options::NoProgress>(true);
-			request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
-			//write to the file
-			FILE* pagefile = fopen(fileName.c_str(), "wb");
-			if (pagefile) {
-				request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
-				request.perform();
-			}
+	try {
+		curlpp::Easy request;
+		//set options, URL, Write callback function, progress output, &c
+		request.setOpt<curlpp::options::Url>(url);
+		request.setOpt<curlpp::options::NoProgress>(true);
+		request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
+		//write to the file
+		auto iterator = fileName.find("https://");
+		if (iterator != std::string::npos)
+			fileName.replace(iterator, 8,"");
+		iterator = fileName.find('/');
+		for (;iterator != std::string::npos; iterator = fileName.find('/'))
+			fileName.replace(iterator, 1, "");
+		iterator = fileName.find(".mkv");
+		if (iterator != std::string::npos)
+			fileName.replace(iterator,4,".torrent");
+		fileName = "downloads/" + fileName;
+		FILE* pagefile = fopen(fileName.c_str(), "wb");
+		std::cout << "downloading: " << fileName << " (" << url << ")\n";
+		if (pagefile) {
+			request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
+			request.perform();
+			return true;
 		}
-		catch (curlpp::LogicError &e) {
-			std::cout << e.what() << std::endl /*endl to flush the stream, might matter*/;
+		else {
+			perror("Error");
 			return false;
 		}
-		catch (curlpp::RuntimeError &e) {
-			std::cout << e.what() << std::endl;
-			return false;
-		}
-		return true;
+	}
+	catch (curlpp::LogicError &e) {
+		std::cout << e.what() << std::endl /*endl to flush the stream, might matter*/;
+		return false;
+	}
+	catch (curlpp::RuntimeError &e) {
+		std::cout << e.what() << std::endl;
+		return false;
+	}
+	return false;
 }
 bool downloadFile(std::tuple<std::string, std::string> file) {
-	return downloadFile(std::get<0>(file), std::get<1>(file));
+	return downloadFile(std::get<1>(file), std::get<0>(file));
 }
 
-//print the field of the node given by value
-void print_by_value(rx::xml_node<> *node, std::string key) {
-	std::cout << node->first_node(key.c_str())->value() << "\n";
-}
 //returns whether the given title matches the expression
 bool match_title(std::string Regular_Expression, std::string title) {
 	regex expression = re_create_f_str(Regular_Expression.c_str());
@@ -109,7 +119,6 @@ class rssFeed {
 			}
 		};
 		void getFeed() {
-			std::cout << "getFeed()\n";
 			rx::xml_document<> feed;
 			//download the file
 			if(!fs::exists(this->fileName))
@@ -131,7 +140,6 @@ class rssFeed {
 				auto entry_title = node->first_node("title")->value();
 				auto entry_url = node->first_node("link")->value();
 				if (in_history(entry_title)){
-					std::cout << "IN HISTORY!!!\n-----\n";
 					break;
 				}; //because it is in chronological order, we can just stop here
 				if (match_title(this->expression, entry_title)) {
@@ -144,9 +152,9 @@ class rssFeed {
 			std::cout << ":"<< fileName << "\n";
 			std::cout << ":"<< url << "\n";
 			std::cout << ":"<< expression << "\n";
-			std::cout << "[\n";
-			for (auto entry : history) std::cout << entry << ",\n";
-			std::cout << "]\n";
+//			std::cout << "[\n";
+//			for (auto entry : history) std::cout << entry << ",\n";
+//			std::cout << "]\n";
 		}
 
 		std::vector<std::tuple<std::string, std::string>> downloads; //title, url
@@ -181,10 +189,14 @@ int main(int argc, char** argv) {
 				item_node;
 				item_node = item_node->next_sibling()) {
 			rssFeed feed(item_node);
-			feed.print_info();
+//			feed.print_info();
 			feed.getFeed();
 			for (auto download : feed.downloads) {
 //				std::cout << std::get<0>(download) << " | " << std::get<1>(download) << "\n";
+				if (!downloadFile(download)) {
+					std::cout << "failed to download file";
+					continue;
+				};
 				//add the node to the history
 				std::string element_name = "downloaded";
 				char* node_name = config_document.allocate_string(element_name.c_str(), element_name.size());
@@ -196,11 +208,10 @@ int main(int argc, char** argv) {
 				history_node->append_node(new_node);
 			}
 		}
-		std::cout << "WRITING TO TESTING!!!\n";
+		//update the config
 		std::ofstream new_xml(CONFIG_NAME);
 		new_xml << config_document;
 		new_xml.close();
 	}
-
 	exit(EXIT_SUCCESS);
 }
