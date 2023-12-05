@@ -5,8 +5,9 @@
 #include <rapidxml_utils.hpp>
 #include <rapidxml_print.hpp>
 #include "regex.c"
-#include "curl/curl.h"
-#include "curl/easy.h"
+#include <curlpp/Easy.hpp>
+//#include "curl/curl.h"
+//#include "curl/easy.h"
 namespace rx = rapidxml;
 //TODO: have a list of regular expressions and an RSS feed that is tailored to only find similar files to that one
 //Then, record the last downloaded file & download if they differ in titles
@@ -36,7 +37,7 @@ bool match_title(std::string Regular_Expression, std::string title) {
 	}
 	return retval;
 }
-//
+//used with curl to download the file
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
 	return written;
