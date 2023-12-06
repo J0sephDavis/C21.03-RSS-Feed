@@ -142,10 +142,6 @@ bool match_title(std::string Regular_Expression, std::string title) {
 /* TODO: make an xml.dtd
  * <xml ...> //HEADER
  * <root>
-	<configuration>
-		<download-folder>./downloads/</download-folder>
-		<rss-feed-folder>./rss_feeds/</rss-feed-folder>
-	</configuration>
  * 	<item>
  * 		<title>title of the feed or whatever - this is probably just for us</title>
  * 		<feedFileName>FileName</feedFileName>
@@ -156,31 +152,26 @@ bool match_title(std::string Regular_Expression, std::string title) {
  * 	...ad infinitum
  * </root>
  * */
-int main(void) { {
+int main(void) {
 	static logger log(logDEBUG,false);
 	log.send("Starting Main:", logINFO);
-	//NAME, URL
-	std::vector<std::tuple<std::string, std::string>> download_links;
-	std::string download_prefix = "./downloads/";
-	std::string rss_feed_prefix = "./rss_feeds/";
-	log.send("DOWNLOAD_PREFIX:" + download_prefix, logDEBUG);
-	log.send("RSS_FEED_PREFIX:" + rss_feed_prefix, logDEBUG);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist. quitting...", logERROR);
 		exit(EXIT_FAILURE);
 	}
-	rx::xml_document<> config_document;
-	rx::file<> config_file(CONFIG_NAME);
+	//loads the files... they both must live together
+	static rx::xml_document<> config_document;
+	static rx::file<> config_file(CONFIG_NAME);
 	try {
 		log.send("Parsing config document", logDEBUG);
 		config_document.parse<0>(config_file.data());
 	}
 	catch (rx::parse_error &e) {
 		log.send("Failed to parse config:" + std::string(e.what()), logERROR);
-		std::cout << e.what() << std::endl;
 		exit(EXIT_FAILURE);
 	}
+	//
 	//pointers to each config node
 	std::vector<rx::xml_node<char>*> config_nodes;
 	log.send("Traversing configuration document & storing each child node.", logDEBUG);
@@ -190,70 +181,94 @@ int main(void) { {
 		log.send(" * Adding config node", logDEBUG);
 		config_nodes.push_back(item_node);
 	}
-	log.send("For-each config in config_nodes", logINFO);
+	//downloads in format of: NAME, URL
+	std::vector<std::tuple<std::string, std::string>> download_links;
+{//begin-scope
+	const std::string rss_feed_prefix = "./rss_feeds/";
+	log.send("RSS_FEED_PREFIX:" + rss_feed_prefix, logINFO);
+	if (!fs::exists(rss_feed_prefix)) {
+		try {
+			log.send("Attempting to create " + rss_feed_prefix + " directory");
+			fs::create_directory(rss_feed_prefix);
+		} catch (fs::filesystem_error &e) {
+			log.send("Failed to create directory");
+			exit(EXIT_FAILURE);
+		}
+	}
 	for (auto config : config_nodes) {
-		log.send("* processing config", logINFO);
 	//1. download its linked RSS feed & set some data
 		std::string configFeedName = rss_feed_prefix + config->first_node("feedFileName")->value();
 		std::string url = config->first_node("feed-url")->first_node()->value();
-		log.send("config feed name:" + configFeedName, logDEBUG);
-		log.send("feed-url:" + url, logDEBUG);
+		log.send("----------", logINFO);
+		log.send("NAME:" + configFeedName, logINFO);
+		log.send("URL:" + url, logDEBUG);
 		if(!downloadFile(url, configFeedName, log)) {
-			log.send("Failed to download file. SKIPPING", logERROR);
+			log.send("Failed to download file. SKIPPING...", logERROR);
 			continue;
 		}
 		std::string feedHistory = config->first_node("history")->value();
-		log.send("history:" + feedHistory, logDEBUG);
+		log.send("HISTORY:" + feedHistory, logINFO);
 	//2. parse the FEED
 		rx::xml_document<> feed;
 		rx::file<char> feedFile(configFeedName);
 		try {
-			log.send("Parsing the downloaded RSS", logINFO);
+			log.send("Parsing RSS", logINFO);
 			feed.parse<rx::parse_no_data_nodes>(feedFile.data());
 		} catch(rx::parse_error &e) {
-			log.send("Failed to parse" + std::string(e.what()), logERROR);
+			log.send("Failed to parse" + std::string(e.what()) + "\nskipping...", logERROR);
 			feed.clear();
-			log.send("Skipping this feed", logINFO);
 			continue;
 		}
 	//3. Store download links & names to config
 		char* regexpression = config->first_node("expr")->value();
 		log.send("Regular Expression:" + std::string(regexpression), logDEBUG);
 		std::string newHistory;
-		log.send("for each node in the RSS", logINFO);
+		log.send("Process RSS feed", logINFO);
 		for (auto *node = feed.first_node()->first_node()->first_node("item");
 				node;
 				node = node->next_sibling()) {
-			log.send("*node", logINFO);
+			log.send("----------", logINFO);
 			std::string entry_title = node->first_node("title")->value();
-			log.send("entry_title: " + entry_title, logDEBUG);
+			log.send("TITLE: " + entry_title, logINFO);
 			std::string entry_url = node->first_node("link")->value();
-			log.send("entry_url: " + entry_url, logDEBUG);
+			log.send("URL: " + entry_url, logDEBUG);
 			if (entry_title.compare(feedHistory) == 0) {
-				log.send("entry title matches history. STOP READING", logINFO);
+				log.send("TITLE matches HISTORY; NEXT FEED.", logINFO);
 				break; //because it is in chronological order, we can just stop here
 			}
 			if (match_title(regexpression, entry_title)) {
 				if (newHistory.empty()) {
-					log.send("update RSS history with the top-most entry downloaded",logDEBUG);
 					newHistory = entry_title;
+					log.send("NEW-HISTORY",logDEBUG);
 				}
-				log.send("entry added to downloads", logINFO);
 				download_links.push_back({entry_title, entry_url});
+				log.send("Send to DOWNLOADS", logINFO);
 			}
 		}
 		if (!newHistory.empty()) {
 			//text-nodes are nodes themself.... this the additional .first_node() call
 			//https://stackoverflow.com/questions/62785421/c-rapidxml-traversing-with-first-node-to-modify-the-value-of-a-node-in-an
 			config->first_node("history")->first_node()->value(config_document.allocate_string(newHistory.c_str()));
-			log.send("updated the history node", logDEBUG);
+			log.send("Allocated NEW-HISTORY node", logDEBUG);
 		}
 		feed.clear();
-		log.send("finished with feed",logDEBUG);
 	}
+}//end-scope
 	//download the files
 	log.send("processing DOWNLOADS(" + std::to_string(download_links.size()) + ")", logINFO);
+	const std::string download_prefix = "./downloads/";
+	if(!fs::exists(download_prefix)) {
+		try {
+			log.send("Attempting to create " + download_prefix + " directory");
+			fs::create_directory(download_prefix);
+		} catch (fs::filesystem_error &e) {
+			log.send("Failed to create directory");
+			exit(EXIT_FAILURE);
+		}
+	}
+	log.send("DOWNLOAD_PREFIX:" + download_prefix, logINFO);
 	for (auto download : download_links) {
+		log.send("----------");
 		log.send("filename BEFORE linting:" + std::get<0>(download),logDEBUG);
 	//lint the string
 		auto iterator = std::get<0>(download).find("https://");
@@ -277,11 +292,8 @@ int main(void) { {
 	log.send("updating the config file", logINFO);
 	std::ofstream new_xml(CONFIG_NAME);
 	new_xml << config_document;
-	std::cout << "\n" << config_document;
 	new_xml.close();
 	config_document.clear();
-	log.send("exiting...", logINFO);
-	std::cout << "exit\n";
-	} //a stupid way to have all the deconstructors call before exit() which doesn't let non-static members call their deconstructor
+	log.send("<--EXIT-->", logINFO);
 	exit(EXIT_SUCCESS);
 }
