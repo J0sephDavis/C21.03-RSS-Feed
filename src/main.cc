@@ -23,7 +23,8 @@ enum logLevel_t {logDEBUG, logINFO, logWARNING, logERROR};
 //Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
 class logger {
 	public:
-		logger(logLevel_t level = logINFO):
+		logger(logLevel_t level = logINFO, bool printLogs = false):
+			print_logs(printLogs),
 			loggerLevel(level),
 			start(std::chrono::system_clock::now())
 		{};
@@ -39,17 +40,19 @@ class logger {
 		 * */
 		void send(std::string message, logLevel_t level = logINFO) {
 			//only print if we are >= to the logger level
-			if (level >= loggerLevel)
-				get(level) << message;
+			if (level >= loggerLevel) {
+				preface_line(level);
+				os << message;
+				if (print_logs) std::cout << "\n" << message;
+			}
 		}
 	private:
-		//todo something with the get function
-		std::ostringstream& get(logLevel_t level) {
+		//adds a timestamp and log-stamp
+		void preface_line(logLevel_t level) {
 			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 			//each log will be "TIME LEVEL MESSAGE"
 			os << "\n-" << std::put_time(std::localtime(&time),"%c");
 			os << "[" << levelString(level)  << "]:\t";
-			return os;
 		}
 		std::string levelString(logLevel_t level) {
 			if (level == logDEBUG)
@@ -63,6 +66,7 @@ class logger {
 			return "unknown";
 		}
 	private:
+		const bool print_logs;
 		logLevel_t loggerLevel;
 		std::chrono::time_point<std::chrono::system_clock> start;
 		std::ostringstream os;
@@ -154,9 +158,9 @@ bool match_title(std::string Regular_Expression, std::string title) {
  * 	...ad infinitum
  * </root>
  * */
-int main(void) {
+int main(void) { {
 	//static to 
-	static logger log(logDEBUG);
+	static logger log(logDEBUG,true);
 	log.send("Starting Main:", logINFO);
 	//NAME, URL
 	std::vector<std::tuple<std::string, std::string>> download_links;
@@ -241,9 +245,10 @@ int main(void) {
 				download_links.push_back({entry_title, entry_url});
 			}
 		}
-		//TODO make sure this is the correct way to allocate a string to replace an old value
 		if (!newHistory.empty()) {
-			config->first_node("history")->value(config_document.allocate_string(newHistory.c_str()));
+			//text-nodes are nodes themself.... this the additional .first_node() call
+			//https://stackoverflow.com/questions/62785421/c-rapidxml-traversing-with-first-node-to-modify-the-value-of-a-node-in-an
+			config->first_node("history")->first_node()->value(config_document.allocate_string(newHistory.c_str()));
 			log.send("updated the history node", logDEBUG);
 		}
 		feed.clear();
@@ -275,9 +280,11 @@ int main(void) {
 	log.send("updating the config file", logINFO);
 	std::ofstream new_xml(CONFIG_NAME);
 	new_xml << config_document;
+	std::cout << "\n" << config_document;
 	new_xml.close();
 	config_document.clear();
 	log.send("exiting...", logINFO);
 	std::cout << "exit\n";
+	} //a stupid way to have all the deconstructors call before exit() which doesn't let non-static members call their deconstructor
 	exit(EXIT_SUCCESS);
 }
