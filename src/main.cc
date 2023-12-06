@@ -104,8 +104,8 @@ int main(void) {
 	{
 		//NAME, URL
 		std::vector<std::tuple<std::string, std::string>> download_links;
-		std::string download_prefix;
-		std::string rss_feed_prefix;
+		std::string download_prefix = "./downloads/";
+		std::string rss_feed_prefix = "./rss_feeds/";
 		if (!fs::exists(CONFIG_NAME)) {
 			std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 			exit(EXIT_FAILURE);
@@ -114,9 +114,6 @@ int main(void) {
 		rx::file<> config_file(CONFIG_NAME);
 		try {
 			config_document.parse<0>(config_file.data());
-			auto config_section = config_document.first_node("configuration");
-			download_prefix = config_section->first_node("download-folder")->value();
-			rss_feed_prefix = config_section->first_node("rss-feed-folder")->value();
 		}
 		catch (rx::parse_error &e) {
 			std::cout << e.what() << std::endl;
