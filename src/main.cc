@@ -11,11 +11,15 @@
 #include <curlpp/Easy.hpp>
 #include <curlpp/Options.hpp>
 #include <filesystem>
+
 namespace rx = rapidxml;
 namespace fs = std::filesystem;
+
 //TODO: better quit functions & logging, for what has been done by the program
 //TODO: make an easy way for the user to update the config
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
+//TODO: remove regex? might not be needed if the RSS is filtered right
+//TODO: when the program exits make sure it updated the conig with all the downloaded files
 
 //used with curl to download the file
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
@@ -24,47 +28,36 @@ static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 }
 //downloads a file
 bool downloadFile(std::string url, std::string fileName) {
+//TODO: handle fclose() & returns in a clean manner
+	std::cout << "downloading: " << fileName << " (" << url << ")\n";
+	FILE* pagefile = fopen(fileName.c_str(), "wb");
 	try {
-		curlpp::Easy request;
 		//set options, URL, Write callback function, progress output, &c
+		curlpp::Easy request;
 		request.setOpt<curlpp::options::Url>(url);
 		request.setOpt<curlpp::options::NoProgress>(true);
 		request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
 		//write to the file
-		auto iterator = fileName.find("https://");
-		if (iterator != std::string::npos)
-			fileName.replace(iterator, 8,"");
-		iterator = fileName.find('/');
-		for (;iterator != std::string::npos; iterator = fileName.find('/'))
-			fileName.replace(iterator, 1, "");
-		iterator = fileName.find(".mkv");
-		if (iterator != std::string::npos)
-			fileName.replace(iterator,4,".torrent");
-		fileName = "downloads/" + fileName;
-		FILE* pagefile = fopen(fileName.c_str(), "wb");
-		std::cout << "downloading: " << fileName << " (" << url << ")\n";
 		if (pagefile) {
 			request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
 			request.perform();
+			fclose(pagefile);
 			return true;
 		}
 		else {
 			perror("Error");
+			fclose(pagefile);
 			return false;
 		}
 	}
 	catch (curlpp::LogicError &e) {
 		std::cout << e.what() << std::endl /*endl to flush the stream, might matter*/;
-		return false;
 	}
 	catch (curlpp::RuntimeError &e) {
 		std::cout << e.what() << std::endl;
-		return false;
 	}
+	fclose(pagefile);
 	return false;
-}
-bool downloadFile(std::tuple<std::string, std::string> file) {
-	return downloadFile(std::get<1>(file), std::get<0>(file));
 }
 
 //returns whether the given title matches the expression
@@ -106,111 +99,101 @@ bool match_title(std::string Regular_Expression, std::string title) {
  * 	...ad infinitum
  * </root>
  * */
-class rssFeed {
-	public:
-		rssFeed(rx::xml_node<> *item_node) {
-			this->title = item_node->first_node("title")->value();
-			this->fileName = item_node->first_node("feedFileName")->value();
-			this->url = item_node->first_node("feed-url")->first_node()->value();
-			this->expression = item_node->first_node("expr")->value();
-			//
-			for (auto *history_node = item_node->first_node("history")->first_node();
-					history_node;
-					history_node = history_node->next_sibling()) {
-				this->history.push_back(history_node->value());
-			}
-		};
-		void getFeed() {
-			rx::xml_document<> feed;
-			//download the file
-			if(!fs::exists(this->fileName))
-				downloadFile(this->url, this->fileName);
-			//loads the file
-			if (!fs::exists(this->fileName)) throw std::runtime_error("file doesnt exist");
-
-			rx::file<> file(this->fileName.c_str());
-			try {
-				feed.parse<rx::parse_declaration_node>(file.data());
-			}
-			catch (rx::parse_error &e) {
-				std::cout << e.what() << std::endl;
-				return;
-			}
-			//parse the file
-			auto *channel = feed.first_node()->first_node(); //rss->channel
-			for (auto *node = channel->first_node("item"); node; node = node->next_sibling()) {
-				auto entry_title = node->first_node("title")->value();
-				auto entry_url = node->first_node("link")->value();
-				if (in_history(entry_title)){
-					break;
-				}; //because it is in chronological order, we can just stop here
-				if (match_title(this->expression, entry_title)) {
-					downloads.push_back({entry_title, entry_url});
-				}
-			}
-		}
-		void print_info() {
-			std::cout << ":"<< title << "\n";
-			std::cout << ":"<< fileName << "\n";
-			std::cout << ":"<< url << "\n";
-			std::cout << ":"<< expression << "\n";
-//			std::cout << "[\n";
-//			for (auto entry : history) std::cout << entry << ",\n";
-//			std::cout << "]\n";
-		}
-
-		std::vector<std::tuple<std::string, std::string>> downloads; //title, url
-	private:
-		std::string title;
-		std::string fileName;
-		std::string url;
-		std::string expression;
-		std::vector<std::string> history; //only loaded at initialization. we will not be updating this
-		//
-		//checks if the given title is in the history
-		bool in_history(std::string title) {
-			for (auto entry : history)
-				if (title == entry) return true;
-			return false;
-		}
-};
 #define CONFIG_NAME "rss-config.xml"
 int main(void) {
 	{
+		//NAME, URL
+		std::vector<std::tuple<std::string, std::string>> download_links;
 		if (!fs::exists(CONFIG_NAME)) {
 			std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 			exit(EXIT_FAILURE);
 		}
 		rx::xml_document<> config_document;
 		rx::file<> config_file(CONFIG_NAME);
-		config_document.parse<0>(config_file.data());
+		try {
+			config_document.parse<0>(config_file.data());
+		}
+		catch (rx::parse_error &e) {
+			std::cout << e.what() << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		//pointers to each config node
+		std::vector<rx::xml_node<char>*> config_nodes;
 		for (auto item_node = config_document.first_node()->first_node();
 				item_node;
 				item_node = item_node->next_sibling()) {
-			rssFeed feed(item_node);
-//			feed.print_info();
-			feed.getFeed();
-			for (auto download : feed.downloads) {
-//				std::cout << std::get<0>(download) << " | " << std::get<1>(download) << "\n";
-				if (!downloadFile(download)) {
-					std::cout << "failed to download file";
-					continue;
-				};
-				//add the node to the history
-				std::string element_name = "downloaded";
-				char* node_name = config_document.allocate_string(element_name.c_str(), element_name.size());
-				char* node_value = config_document.allocate_string(std::get<0>(download).c_str(), std::get<0>(download).size());
-				rx::xml_node<> *new_node = config_document.allocate_node(rx::node_element,
-						node_name, node_value
-				);
-				auto history_node = item_node->first_node("history");
-				history_node->append_node(new_node);
+			config_nodes.push_back(item_node);
+		}
+		for (auto config : config_nodes) {
+		//1. download its linked RSS feed & set some data
+			std::string configFeedName = "rss_feeds/";
+			configFeedName += config->first_node("feedFileName")->value();
+			std::string url = config->first_node("feed-url")->first_node()->value();
+			if(!downloadFile(url, configFeedName))
+				exit(EXIT_FAILURE);
+			rx::file<char> feedFile(configFeedName);
+			//char* configTitle = config->first_node("title")->value();
+			//the last title seen in the rss
+			std::string feedHistory = config->first_node("history")->value();
+		//2. parse the FEED
+			std::cout << "----------\n";
+			std::cout << "FEED:" << configFeedName << "\n";
+			rx::xml_document<> feed;
+			try {
+				feed.parse<rx::parse_no_data_nodes>(feedFile.data());
+			} catch(rx::parse_error &e) {
+				std::cout << "parse error:" << e.what() << "\n";
+				feed.clear();
+				exit(EXIT_FAILURE);
+			}
+		//3. Store download links & names to config
+			std::cout << "history:" << feedHistory << "\n";
+			char* regexpression = config->first_node("expr")->value();
+			std::string newHistory;
+			int debug_count = 0;
+			for (auto *node = feed.first_node()->first_node()->first_node("item");
+					node;
+					node = node->next_sibling()) {
+				std::string entry_title = node->first_node("title")->value();
+				std::string entry_url = node->first_node("link")->value();
+				if (entry_title.compare(feedHistory) == 0)
+					break; //because it is in chronological order, we can just stop here
+				if (newHistory.empty())
+					newHistory = entry_title;
+				if (match_title(regexpression, entry_title)) {
+					download_links.push_back({entry_title, entry_url});
+				if(debug_count++ == 3) break;
+				}
+			}
+			//TODO make sure this is the correct way to allocate a string to replace an old value
+			if (!newHistory.empty())
+				config->first_node("history")->value(config_document.allocate_string(newHistory.c_str()));
+			feed.clear();
+		}
+		//download the files
+		for (auto download : download_links) {
+		//lint the string
+			auto iterator = std::get<0>(download).find("https://");
+			if (iterator != std::string::npos)
+				std::get<0>(download).replace(iterator, 8,"");
+			iterator = std::get<0>(download).find('/');
+			for (;iterator != std::string::npos; iterator = std::get<0>(download).find('/'))
+				std::get<0>(download).replace(iterator, 1, "");
+			iterator = std::get<0>(download).find(".mkv");
+			if (iterator != std::string::npos)
+				std::get<0>(download).replace(iterator,4,".download");
+		//download
+			std::string fileName = "downloads/" + std::get<0>(download);
+			if (!downloadFile(std::get<1>(download), fileName)) {
+				std::cout << "failed to download:" + fileName;
+				continue;
 			}
 		}
 		//update the config
 		std::ofstream new_xml(CONFIG_NAME);
 		new_xml << config_document;
 		new_xml.close();
+		config_document.clear();
 	}
 	exit(EXIT_SUCCESS);
 }
