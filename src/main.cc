@@ -103,7 +103,6 @@ bool downloadFile(std::string url, std::string fileName, logger &log) {
 		}
 		else {
 			perror("Error");
-			fclose(pagefile);
 			return false;
 		}
 	}
@@ -182,7 +181,7 @@ int main(void) {
 		config_nodes.push_back(item_node);
 	}
 	//downloads in format of: NAME, URL
-	std::vector<std::tuple<std::string, std::string>> download_links;
+	std::vector<std::string> download_links;
 {//begin-scope
 	const std::string rss_feed_prefix = "./rss_feeds/";
 	log.send("RSS_FEED_PREFIX:" + rss_feed_prefix, logINFO);
@@ -241,7 +240,7 @@ int main(void) {
 					newHistory = entry_title;
 					log.send("NEW-HISTORY",logDEBUG);
 				}
-				download_links.push_back({entry_title, entry_url});
+				download_links.push_back(entry_url);
 				log.send("Send to DOWNLOADS", logINFO);
 			}
 		}
@@ -269,21 +268,20 @@ int main(void) {
 	log.send("DOWNLOAD_PREFIX:" + download_prefix, logINFO);
 	for (auto download : download_links) {
 		log.send("----------");
-		log.send("filename BEFORE linting:" + std::get<0>(download),logDEBUG);
+		std::string fileName = download;
+		log.send("filename BEFORE linting:" + fileName,logDEBUG);
 	//lint the string
-		auto iterator = std::get<0>(download).find("https://");
+		//we were previously saving it as the title name, but the LINK value has the proper file-format for the fileName...
+		auto iterator = fileName.find("https://");
 		if (iterator != std::string::npos)
-			std::get<0>(download).replace(iterator, 8,"");
-		iterator = std::get<0>(download).find('/');
-		for (;iterator != std::string::npos; iterator = std::get<0>(download).find('/'))
-			std::get<0>(download).replace(iterator, 1, "");
-		iterator = std::get<0>(download).find(".mkv");
-		if (iterator != std::string::npos)
-			std::get<0>(download).replace(iterator,4,".download");
-		log.send("filename AFTER linting:" + std::get<0>(download),logDEBUG);
+			fileName.replace(iterator, 8,"");
+		iterator = fileName.find('/');
+		for (;iterator != std::string::npos; iterator = fileName.find('/'))
+			fileName.replace(iterator, 1, "");
+		log.send("filename AFTER linting:" + fileName,logDEBUG);
 	//download
-		std::string fileName = download_prefix + std::get<0>(download);
-		if (!downloadFile(std::get<1>(download), fileName, log)) {
+		fileName = download_prefix + fileName;
+		if (!downloadFile(download, fileName, log)) {
 			log.send("failed to download file, skipping...", logERROR);
 			continue;
 		}
