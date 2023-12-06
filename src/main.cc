@@ -85,6 +85,10 @@ bool match_title(std::string Regular_Expression, std::string title) {
 /* TODO: make an xml.dtd
  * <xml ...> //HEADER
  * <root>
+	<configuration>
+		<download-folder>./downloads/</download-folder>
+		<rss-feed-folder>./rss_feeds/</rss-feed-folder>
+	</configuration>
  * 	<item>
  * 		<title>title of the feed or whatever - this is probably just for us</title>
  * 		<feedFileName>FileName</feedFileName>
@@ -100,6 +104,8 @@ int main(void) {
 	{
 		//NAME, URL
 		std::vector<std::tuple<std::string, std::string>> download_links;
+		std::string download_prefix;
+		std::string rss_feed_prefix;
 		if (!fs::exists(CONFIG_NAME)) {
 			std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 			exit(EXIT_FAILURE);
@@ -108,6 +114,9 @@ int main(void) {
 		rx::file<> config_file(CONFIG_NAME);
 		try {
 			config_document.parse<0>(config_file.data());
+			auto config_section = config_document.first_node("configuration");
+			download_prefix = config_section->first_node("download-folder")->value();
+			rss_feed_prefix = config_section->first_node("rss-feed-folder")->value();
 		}
 		catch (rx::parse_error &e) {
 			std::cout << e.what() << std::endl;
@@ -115,7 +124,7 @@ int main(void) {
 		}
 		//pointers to each config node
 		std::vector<rx::xml_node<char>*> config_nodes;
-		for (auto item_node = config_document.first_node()->first_node();
+		for (auto item_node = config_document.first_node()->first_node("item");
 				item_node;
 				item_node = item_node->next_sibling()) {
 			config_nodes.push_back(item_node);
@@ -123,8 +132,7 @@ int main(void) {
 		for (auto config : config_nodes) {
 			std::cout << "----------\n";
 		//1. download its linked RSS feed & set some data
-			std::string configFeedName = "rss_feeds/";
-			configFeedName += config->first_node("feedFileName")->value();
+			std::string configFeedName = rss_feed_prefix + config->first_node("feedFileName")->value();
 			std::string url = config->first_node("feed-url")->first_node()->value();
 			if(!downloadFile(url, configFeedName)) {
 				std::cout << "could not download the file. skipping...\n";
@@ -180,7 +188,7 @@ int main(void) {
 			if (iterator != std::string::npos)
 				std::get<0>(download).replace(iterator,4,".download");
 		//download
-			std::string fileName = "downloads/" + std::get<0>(download);
+			std::string fileName = download_prefix + std::get<0>(download);
 			if (!downloadFile(std::get<1>(download), fileName)) {
 				std::cout << "failed to download:" + fileName;
 				continue;
