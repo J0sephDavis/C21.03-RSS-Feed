@@ -121,18 +121,18 @@ int main(void) {
 			config_nodes.push_back(item_node);
 		}
 		for (auto config : config_nodes) {
+			std::cout << "----------\n";
 		//1. download its linked RSS feed & set some data
 			std::string configFeedName = "rss_feeds/";
 			configFeedName += config->first_node("feedFileName")->value();
 			std::string url = config->first_node("feed-url")->first_node()->value();
-			if(!downloadFile(url, configFeedName))
-				exit(EXIT_FAILURE);
+			if(!downloadFile(url, configFeedName)) {
+				std::cout << "could not download the file. skipping...\n";
+				continue;
+			}
 			rx::file<char> feedFile(configFeedName);
-			//char* configTitle = config->first_node("title")->value();
-			//the last title seen in the rss
 			std::string feedHistory = config->first_node("history")->value();
 		//2. parse the FEED
-			std::cout << "----------\n";
 			std::cout << "FEED:" << configFeedName << "\n";
 			rx::xml_document<> feed;
 			try {
@@ -140,13 +140,14 @@ int main(void) {
 			} catch(rx::parse_error &e) {
 				std::cout << "parse error:" << e.what() << "\n";
 				feed.clear();
-				exit(EXIT_FAILURE);
+				std::cout << "skipping...\n";
+				continue;
 			}
 		//3. Store download links & names to config
-			std::cout << "history:" << feedHistory << "\n";
 			char* regexpression = config->first_node("expr")->value();
+			if (!feedHistory.empty())
+				std::cout << "history:" << feedHistory << "\n";
 			std::string newHistory;
-			int debug_count = 0;
 			for (auto *node = feed.first_node()->first_node()->first_node("item");
 					node;
 					node = node->next_sibling()) {
@@ -158,7 +159,6 @@ int main(void) {
 					newHistory = entry_title;
 				if (match_title(regexpression, entry_title)) {
 					download_links.push_back({entry_title, entry_url});
-				if(debug_count++ == 3) break;
 				}
 			}
 			//TODO make sure this is the correct way to allocate a string to replace an old value
@@ -166,6 +166,7 @@ int main(void) {
 				config->first_node("history")->value(config_document.allocate_string(newHistory.c_str()));
 			feed.clear();
 		}
+		std::cout << "---DOWNLOADS(" << download_links.size() << ")---\n";
 		//download the files
 		for (auto download : download_links) {
 		//lint the string
