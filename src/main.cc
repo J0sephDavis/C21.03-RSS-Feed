@@ -108,12 +108,10 @@ bool downloadFile(std::string url, std::string fileName, logger &log) {
 		}
 	}
 	catch (curlpp::LogicError &e) {
-		//log.send("Failed to download file: " + std::string(e.what()), logERROR);
-		std::cout << e.what() << std::endl /*endl to flush the stream, might matter*/;
+		log.send("Failed to download file: " + std::string(e.what()), logERROR);
 	}
 	catch (curlpp::RuntimeError &e) {
-		//log.send("Failed to download file: " + std::string(e.what()), logERROR);
-		std::cout << e.what() << std::endl;
+		log.send("Failed to download file: " + std::string(e.what()), logERROR);
 	}
 	fclose(pagefile);
 	return false;
@@ -159,8 +157,7 @@ bool match_title(std::string Regular_Expression, std::string title) {
  * </root>
  * */
 int main(void) { {
-	//static to 
-	static logger log(logDEBUG,true);
+	static logger log(logDEBUG,false);
 	log.send("Starting Main:", logINFO);
 	//NAME, URL
 	std::vector<std::tuple<std::string, std::string>> download_links;
