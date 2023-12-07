@@ -233,7 +233,6 @@ class download_entry {
  * </root>
  * */
 int main(void) {
-	exit(EXIT_SUCCESS);
 	static logger log(logWARNING);
 	log.send("Starting RSS-Feed:");
 	if (!fs::exists(CONFIG_NAME)) {
