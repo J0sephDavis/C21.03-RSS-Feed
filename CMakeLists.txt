@@ -3,7 +3,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(RSS-Feed
   LANGUAGES CXX
-  VERSION 1.0.7
+  VERSION 1.0.8
 )
 add_executable(RSS-Feed 
 	src/main.cc
@@ -12,6 +12,7 @@ find_package( CURL REQUIRED )
 
 target_include_directories(RSS-Feed
 	PRIVATE src rapidxml-1.13 curlpp_v81
+	"${PROJECT_BINARY_DIR}"
 )
 
 target_link_libraries(RSS-Feed 
@@ -19,10 +20,25 @@ target_link_libraries(RSS-Feed
 	PUBLIC CURL::libcurl
 	PUBLIC curlpp
 )
-option(USE_PRINT_LOGS, "Print Logs to STDOUT")
-if (USE_PRINT_LOGS)
-	add_compile_definitions(PRINT_LOGS=ON)
+
+option(PRINT_LOGS "Print Logs to STDOUT" OFF)
+if (PRINT_LOGS)
+	message("Print is on")
+	target_compile_definitions(RSS-Feed PRIVATE COUT_LOG=1)
+else()
+	message("Print is off")
+	target_compile_definitions(RSS-Feed PRIVATE COUT_LOG=0)
 endif()
+
+option(CLOBBER_DLS "Overwrite downloads" OFF)
+if (CLOBBER_DLS)
+	message("clobber is on")
+	target_compile_definitions(RSS-Feed PRIVATE CLOBBER_FLAG=1)
+else()
+	message("clobber is off")
+	target_compile_definitions(RSS-Feed PRIVATE CLOBBER_FLAG=0)
+endif()
+configure_file("${PROJECT_SOURCE_DIR}/src/config.h.in" "config.h" @ONLY)
 set_target_properties(RSS-Feed PROPERTIES CXX_STANDARD 20)
 #fetchContent & find_package failed to properly link libcurlpp....
 target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic)
