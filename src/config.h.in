@@ -1,0 +1,6 @@
+#ifndef RSS_FEED_CONFIG
+#define RSS_FEED_CONFIG
+
+#cmakedefine PROJECT_VERSION "@PROJECT_VERSION@"
+
+#endif
