@@ -26,8 +26,7 @@ enum logLevel_t {logDEBUG, logINFO, logWARNING, logERROR};
 class logger {
 	//TODO: have log file update during program runtime, not just when it exits successfully...
 	public:
-		logger(logLevel_t level = logINFO, bool printLogs = false):
-			print_logs(printLogs),
+		logger(logLevel_t level = logINFO):
 			loggerLevel(level) {};
 		~logger() {
 			os << std::endl; //flush
@@ -54,7 +53,9 @@ class logger {
 			if (level >= loggerLevel) {
 				preface_line(level);
 				os << message;
-				if (print_logs) std::cout << "\n" << message;
+#ifdef PRINT_LOGS
+				std::cout << "\n" << message;
+#endif
 			}
 		}
 	private:
@@ -74,10 +75,9 @@ class logger {
 				return "WARNING";
 			if (level == logERROR)
 				return "ERROR";
-			return "unknown";
+			return "unknown-loglevel";
 		}
 	private:
-		const bool print_logs;
 		logLevel_t loggerLevel;
 		std::ostringstream os;
 };
@@ -210,7 +210,7 @@ class download_entry {
  * </root>
  * */
 int main(void) {
-	static logger log(logINFO,false);
+	static logger log(logINFO);
 	log.send("Starting RSS-Feed:", logINFO);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
