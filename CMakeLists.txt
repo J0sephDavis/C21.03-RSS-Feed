@@ -3,7 +3,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(RSS-Feed
   LANGUAGES CXX
-  VERSION 1.0.6
+  VERSION 1.0.7
 )
 add_executable(RSS-Feed 
 	src/main.cc

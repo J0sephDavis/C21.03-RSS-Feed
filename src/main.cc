@@ -21,7 +21,12 @@ namespace fs = std::filesystem;
 #define RSS_FOLDER "./rss_feeds/"
 #define DOWNLOAD_FOLDER "./downloads/"
 #define LOG_FOLDER "./logs/"
-enum logLevel_t {logDEBUG, logINFO, logWARNING, logERROR};
+enum logLevel_t {
+	logDEBUG = 0,
+	logWARNING,
+	logINFO,
+	logERROR
+};
 //Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
 class logger {
 	//TODO: have log file update during program runtime, not just when it exits successfully...
@@ -145,7 +150,11 @@ class download_entry {
 		}
 		//downloads a file
 		bool downloadFile() {
-			log.send("downloadFile(" + url + ", " + fileName + ")", logINFO);
+			log.send("downloadFile(" + url + ", " + fileName + ")");
+			if(fs::exists(fileName)) {
+				log.send("FILE ALREADY EXISTS");
+				return false;
+			}
 			//TODO: handle fclose() & returns in a clean manner
 			//this section of code somewhat irks me. Not the curlpp,
 			//but the error handling & that we are using a FILE* rather than an fstream.
@@ -162,7 +171,7 @@ class download_entry {
 					request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
 					request.perform();
 					fclose(pagefile);
-					log.send("File downloaded successfully", logINFO);
+					log.send("File downloaded successfully");
 					return true;
 				}
 				else {
@@ -210,8 +219,8 @@ class download_entry {
  * </root>
  * */
 int main(void) {
-	static logger log(logINFO);
-	log.send("Starting RSS-Feed:", logINFO);
+	static logger log(logWARNING);
+	log.send("Starting RSS-Feed:");
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist. quitting...", logERROR);
@@ -255,8 +264,8 @@ int main(void) {
 		std::string configFeedName = config->first_node("feedFileName")->value();
 		std::string url = config->first_node("feed-url")->first_node()->value();
 
-		log.send("----------", logINFO);
-		log.send("NAME:" + configFeedName, logINFO);
+		log.send("----------");
+		log.send("NAME:" + configFeedName);
 		log.send("URL:" + url, logDEBUG);
 		log.send("configFeedName:" + configFeedName, logDEBUG);
 
@@ -266,12 +275,12 @@ int main(void) {
 			continue;
 		}
 		std::string feedHistory = config->first_node("history")->value();
-		log.send("HISTORY:" + feedHistory, logINFO);
+		log.send("HISTORY:" + feedHistory);
 	//2. parse the FEED
 		rx::xml_document<> feed;
 		rx::file<char> feedFile(config_download.getFileName());
 		try {
-			log.send("Parsing RSS", logINFO);
+			log.send("Parsing RSS");
 			feed.parse<rx::parse_no_data_nodes>(feedFile.data());
 		} catch(rx::parse_error &e) {
 			log.send("Failed to parse" + std::string(e.what()) + "\nskipping...", logERROR);
@@ -282,17 +291,17 @@ int main(void) {
 		char* regexpression = config->first_node("expr")->value();
 		log.send("Regular Expression:" + std::string(regexpression), logDEBUG);
 		std::string newHistory;
-		log.send("Process RSS feed", logINFO);
+		log.send("Process RSS feed");
 		for (auto *node = feed.first_node()->first_node()->first_node("item");
 				node;
 				node = node->next_sibling()) {
-			log.send("----------", logINFO);
+			log.send("----------");
 			std::string entry_title = node->first_node("title")->value();
-			log.send("TITLE: " + entry_title, logINFO);
+			log.send("TITLE: " + entry_title);
 			std::string entry_url = node->first_node("link")->value();
 			log.send("URL: " + entry_url, logDEBUG);
 			if (entry_title.compare(feedHistory) == 0) {
-				log.send("TITLE matches HISTORY; NEXT FEED.", logINFO);
+				log.send("TITLE matches HISTORY; NEXT FEED.");
 				break; //because it is in chronological order, we can just stop here
 			}
 			if (match_title(regexpression, entry_title)) {
@@ -301,7 +310,7 @@ int main(void) {
 					log.send("NEW-HISTORY",logDEBUG);
 				}
 				download_links.push_back(download_entry(entry_url, log, DOWNLOAD_FOLDER));
-				log.send("Send to DOWNLOADS", logINFO);
+				log.send("Send to DOWNLOADS");
 			}
 		}
 		if (!newHistory.empty()) {
@@ -314,7 +323,7 @@ int main(void) {
 	}
 }//end-scope
 	//download the files
-	log.send("processing DOWNLOADS(" + std::to_string(download_links.size()) + ")", logINFO);
+	log.send("processing DOWNLOADS(" + std::to_string(download_links.size()) + ")");
 	if(!fs::exists(DOWNLOAD_FOLDER)) {
 		try {
 			log.send("Attempting to create " + std::string(DOWNLOAD_FOLDER) + " directory");
@@ -324,7 +333,7 @@ int main(void) {
 			exit(EXIT_FAILURE);
 		}
 	}
-	log.send("DOWNLOAD_PREFIX:" + std::string(DOWNLOAD_FOLDER), logINFO);
+	log.send("DOWNLOAD_PREFIX:" + std::string(DOWNLOAD_FOLDER));
 	for (auto download : download_links) {
 		log.send("attempting download");
 		if (!download.downloadFile()) {
@@ -338,6 +347,6 @@ int main(void) {
 	new_xml << config_document;
 	new_xml.close();
 	config_document.clear();
-	log.send("Config file updated", logINFO);
+	log.send("Config file updated");
 	exit(EXIT_SUCCESS);
 }
