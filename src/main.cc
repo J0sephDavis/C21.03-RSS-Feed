@@ -80,7 +80,6 @@ class logger {
 		const bool print_logs;
 		logLevel_t loggerLevel;
 		std::ostringstream os;
-		std::ofstream logFile;
 };
 
 //TODO: better quit functions & logging, for what has been done by the program
@@ -146,7 +145,7 @@ class download_entry {
 		}
 		//downloads a file
 		bool downloadFile() {
-			log.send("downloadFile(" + url + ", " + fileName + ")", logDEBUG);
+			log.send("downloadFile(" + url + ", " + fileName + ")", logINFO);
 			//TODO: handle fclose() & returns in a clean manner
 			//this section of code somewhat irks me. Not the curlpp,
 			//but the error handling & that we are using a FILE* rather than an fstream.
@@ -163,7 +162,7 @@ class download_entry {
 					request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
 					request.perform();
 					fclose(pagefile);
-					log.send("File downloaded successfully", logDEBUG);
+					log.send("File downloaded successfully", logINFO);
 					return true;
 				}
 				else {
@@ -327,7 +326,7 @@ int main(void) {
 	}
 	log.send("DOWNLOAD_PREFIX:" + std::string(DOWNLOAD_FOLDER), logINFO);
 	for (auto download : download_links) {
-		log.send("----------");
+		log.send("attempting download");
 		if (!download.downloadFile()) {
 			log.send("failed to download file, skipping...", logERROR);
 			continue;
