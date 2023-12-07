@@ -18,22 +18,28 @@ namespace fs = std::filesystem;
 #include <ctime> //for logging
 
 #define CONFIG_NAME "rss-config.xml"
-#define LOG_NAME "rssFeed.log"
 enum logLevel_t {logDEBUG, logINFO, logWARNING, logERROR};
 //Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
 class logger {
 	public:
 		logger(logLevel_t level = logINFO, bool printLogs = false):
 			print_logs(printLogs),
-			loggerLevel(level),
-			start(std::chrono::system_clock::now())
+			loggerLevel(level)
 		{};
 		~logger() {
 			os << std::endl; //flush
-			std::ofstream logFile(LOG_NAME);
+			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+			const std::string log_prefix = "rss-feed-";
+			const std::string log_suffix = ".log";
+			//timestamp length = ~16
+			//pre&postfix = 13
+			std::string datetime(40,0);
+			//https://stackoverflow.com/questions/28977585/how-to-get-put-time-into-a-variable
+			datetime.resize(std::strftime(&datetime[0], datetime.size(), "%Y-%m-%d_%H-%M", std::localtime(&time)));
+			std::string fileName = log_prefix + datetime + log_suffix;
+			std::ofstream logFile(fileName);
 			logFile << os.str();
 			logFile.close();
-			(void)loggerLevel;
 		}
 		/*
 		 * instead of send(msg, level) -> debug(msg), error(msg), info(msg), warning(msg) ?
@@ -68,7 +74,6 @@ class logger {
 	private:
 		const bool print_logs;
 		logLevel_t loggerLevel;
-		std::chrono::time_point<std::chrono::system_clock> start;
 		std::ostringstream os;
 };
 
