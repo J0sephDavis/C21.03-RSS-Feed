@@ -64,7 +64,7 @@ class logger {
 			if (level >= loggerLevel) {
 				preface_line(level);
 				os << message;
-#if PRINT_LOGS_FLAG
+#if COUT_LOG
 				std::cout << "\n" << message;
 #endif
 			}
