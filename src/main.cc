@@ -18,32 +18,37 @@ namespace fs = std::filesystem;
 #include <ctime> //for logging
 
 #define CONFIG_NAME "rss-config.xml"
+#define RSS_FOLDER "./rss_feeds/"
+#define DOWNLOAD_FOLDER "./downloads/"
+#define LOG_FOLDER "./logs/"
 enum logLevel_t {logDEBUG, logINFO, logWARNING, logERROR};
 //Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
 class logger {
+	//TODO: have log file update during program runtime, not just when it exits successfully...
 	public:
 		logger(logLevel_t level = logINFO, bool printLogs = false):
 			print_logs(printLogs),
-			loggerLevel(level)
-		{};
+			loggerLevel(level) {};
 		~logger() {
 			os << std::endl; //flush
 			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 			const std::string log_prefix = "rss-feed-";
 			const std::string log_suffix = ".log";
-			//timestamp length = ~16
-			//pre&postfix = 13
-			std::string datetime(40,0);
+#define logs_folder_len 7
+#define timestamp_len 16
+			std::string datetime(logs_folder_len + timestamp_len + log_prefix.size() + log_suffix.size() + 10
+					,0
+			);
 			//https://stackoverflow.com/questions/28977585/how-to-get-put-time-into-a-variable
 			datetime.resize(std::strftime(&datetime[0], datetime.size(), "%Y-%m-%d_%H-%M", std::localtime(&time)));
-			std::string fileName = log_prefix + datetime + log_suffix;
+			std::string fileName = LOG_FOLDER + log_prefix + datetime + log_suffix;
+			//
+			std::cout << "log file=" << fileName << std::endl;
 			std::ofstream logFile(fileName);
 			logFile << os.str();
 			logFile.close();
 		}
-		/*
-		 * instead of send(msg, level) -> debug(msg), error(msg), info(msg), warning(msg) ?
-		 * */
+		//sends a message to the log
 		void send(std::string message, logLevel_t level = logINFO) {
 			//only print if we are >= to the logger level
 			if (level >= loggerLevel) {
@@ -75,50 +80,19 @@ class logger {
 		const bool print_logs;
 		logLevel_t loggerLevel;
 		std::ostringstream os;
+		std::ofstream logFile;
 };
 
 //TODO: better quit functions & logging, for what has been done by the program
 //TODO: make an easy way for the user to update the config
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
-//TODO: when the program exits make sure it updated the conig with all the downloaded files
+//TODO: only update history node if we successfully download the file
 
 //used with curl to download the file
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
 	return written;
-}
-//downloads a file
-bool downloadFile(std::string url, std::string fileName, logger &log) {
-	log.send("downloadFile(" + url + "," + fileName + ")", logDEBUG);
-//TODO: handle fclose() & returns in a clean manner
-	FILE* pagefile = fopen(fileName.c_str(), "wb");
-	try {
-		//set options, URL, Write callback function, progress output, &c
-		curlpp::Easy request;
-		request.setOpt<curlpp::options::Url>(url);
-		request.setOpt<curlpp::options::NoProgress>(true);
-		request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
-		//write to the file
-		if (pagefile) {
-			request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
-			request.perform();
-			fclose(pagefile);
-			return true;
-		}
-		else {
-			perror("Error");
-			return false;
-		}
-	}
-	catch (curlpp::LogicError &e) {
-		log.send("Failed to download file: " + std::string(e.what()), logERROR);
-	}
-	catch (curlpp::RuntimeError &e) {
-		log.send("Failed to download file: " + std::string(e.what()), logERROR);
-	}
-	fclose(pagefile);
-	return false;
 }
 
 //returns whether the given title matches the expression
@@ -138,6 +112,86 @@ bool match_title(std::string Regular_Expression, std::string title) {
 	}
 	return retval;
 }
+
+class download_entry {
+	public:
+		//TODO: instead of an std::string download_path & name_of_file, use std::filesystem::path
+		//fileName can only be empty when it is not an RSS file, we wont find it otherwise
+		download_entry(std::string url, logger &log, std::string download_path, std::string name_of_file = "") :
+			log(log),
+			url(url)
+		{
+			log.send("DOWNLOAD_ENTRY constructor called with:\n\turl:" + url + "\n\tdownload_path:" + download_path + "\n\tname:" + name_of_file, logDEBUG);
+			if (name_of_file == "") {
+				log.send("name_of_file==\"\", creating from linted url", logDEBUG);
+				fileName = url;
+				const std::string url_start = "https://";
+				auto iterator = fileName.find(url_start);
+				fileName.replace(iterator,url_start.size(),"");
+				log.send("\tfileName: " + fileName, logDEBUG);
+				iterator = fileName.find('/');
+				while (iterator != std::string::npos) {
+					fileName.replace(iterator,1,"");
+					iterator = fileName.find('/');
+				}
+				fileName.insert(0,download_path);
+				log.send("\tfileName: " + fileName, logDEBUG);
+			}
+			else
+				fileName = download_path + name_of_file;
+			log.send("DOWNLOAD_ENTRY created with:\n\turl:" + url + "\n\tname:" + fileName, logDEBUG);
+		};
+		~download_entry() {
+			log.send("DOWNLOAD_ENTRY destroyed with:\n\turl:" + url + "\n\tname:" + fileName, logDEBUG);
+		}
+		//downloads a file
+		bool downloadFile() {
+			log.send("downloadFile(" + url + ", " + fileName + ")", logDEBUG);
+			//TODO: handle fclose() & returns in a clean manner
+			//this section of code somewhat irks me. Not the curlpp,
+			//but the error handling & that we are using a FILE* rather than an fstream.
+			//Must look into how we can get to an fstream with curlpp write callback
+			FILE* pagefile = fopen(fileName.c_str(), "wb");
+			try {
+				//set options, URL, Write callback function, progress output, &c
+				curlpp::Easy request;
+				request.setOpt<curlpp::options::Url>(url);
+				request.setOpt<curlpp::options::NoProgress>(true);
+				request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
+				//write to the file
+				if (pagefile) {
+					request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
+					request.perform();
+					fclose(pagefile);
+					log.send("File downloaded successfully", logDEBUG);
+					return true;
+				}
+				else {
+					perror("Error");
+					return false;
+				}
+			}
+			catch (curlpp::LogicError &e) {
+				log.send("Failed to download file: " + std::string(e.what()), logERROR);
+			}
+			catch (curlpp::RuntimeError &e) {
+				log.send("Failed to download file: " + std::string(e.what()), logERROR);
+			}
+			fclose(pagefile);
+			return false;
+		}
+		const std::string getFileName() {
+			return fileName;
+		}
+	private:
+		logger& log;
+		//url to download from
+		const std::string url;
+		//name of the file
+		std::string fileName;
+};
+
+
 //Data we need:
 //Per title: (each an object in the XML file or possibly their own XML files) 
 // 	1. The regular expression to match
@@ -157,8 +211,8 @@ bool match_title(std::string Regular_Expression, std::string title) {
  * </root>
  * */
 int main(void) {
-	static logger log(logDEBUG,false);
-	log.send("Starting Main:", logINFO);
+	static logger log(logINFO,false);
+	log.send("Starting RSS-Feed:", logINFO);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist. quitting...", logERROR);
@@ -186,14 +240,12 @@ int main(void) {
 		config_nodes.push_back(item_node);
 	}
 	//downloads in format of: NAME, URL
-	std::vector<std::string> download_links;
+	std::vector<download_entry> download_links;
 {//begin-scope
-	const std::string rss_feed_prefix = "./rss_feeds/";
-	log.send("RSS_FEED_PREFIX:" + rss_feed_prefix, logINFO);
-	if (!fs::exists(rss_feed_prefix)) {
+	if (!fs::exists(RSS_FOLDER)) {
 		try {
-			log.send("Attempting to create " + rss_feed_prefix + " directory");
-			fs::create_directory(rss_feed_prefix);
+			log.send("Attempting to create " + std::string(RSS_FOLDER) + " directory");
+			fs::create_directory(RSS_FOLDER);
 		} catch (fs::filesystem_error &e) {
 			log.send("Failed to create directory");
 			exit(EXIT_FAILURE);
@@ -201,12 +253,16 @@ int main(void) {
 	}
 	for (auto config : config_nodes) {
 	//1. download its linked RSS feed & set some data
-		std::string configFeedName = rss_feed_prefix + config->first_node("feedFileName")->value();
+		std::string configFeedName = config->first_node("feedFileName")->value();
 		std::string url = config->first_node("feed-url")->first_node()->value();
+
 		log.send("----------", logINFO);
 		log.send("NAME:" + configFeedName, logINFO);
 		log.send("URL:" + url, logDEBUG);
-		if(!downloadFile(url, configFeedName, log)) {
+		log.send("configFeedName:" + configFeedName, logDEBUG);
+
+		download_entry config_download(url, log, RSS_FOLDER, configFeedName);
+		if(!config_download.downloadFile()) {
 			log.send("Failed to download file. SKIPPING...", logERROR);
 			continue;
 		}
@@ -214,7 +270,7 @@ int main(void) {
 		log.send("HISTORY:" + feedHistory, logINFO);
 	//2. parse the FEED
 		rx::xml_document<> feed;
-		rx::file<char> feedFile(configFeedName);
+		rx::file<char> feedFile(config_download.getFileName());
 		try {
 			log.send("Parsing RSS", logINFO);
 			feed.parse<rx::parse_no_data_nodes>(feedFile.data());
@@ -245,7 +301,7 @@ int main(void) {
 					newHistory = entry_title;
 					log.send("NEW-HISTORY",logDEBUG);
 				}
-				download_links.push_back(entry_url);
+				download_links.push_back(download_entry(entry_url, log, DOWNLOAD_FOLDER));
 				log.send("Send to DOWNLOADS", logINFO);
 			}
 		}
@@ -260,43 +316,29 @@ int main(void) {
 }//end-scope
 	//download the files
 	log.send("processing DOWNLOADS(" + std::to_string(download_links.size()) + ")", logINFO);
-	const std::string download_prefix = "./downloads/";
-	if(!fs::exists(download_prefix)) {
+	if(!fs::exists(DOWNLOAD_FOLDER)) {
 		try {
-			log.send("Attempting to create " + download_prefix + " directory");
-			fs::create_directory(download_prefix);
+			log.send("Attempting to create " + std::string(DOWNLOAD_FOLDER) + " directory");
+			fs::create_directory(DOWNLOAD_FOLDER);
 		} catch (fs::filesystem_error &e) {
 			log.send("Failed to create directory");
 			exit(EXIT_FAILURE);
 		}
 	}
-	log.send("DOWNLOAD_PREFIX:" + download_prefix, logINFO);
+	log.send("DOWNLOAD_PREFIX:" + std::string(DOWNLOAD_FOLDER), logINFO);
 	for (auto download : download_links) {
 		log.send("----------");
-		std::string fileName = download;
-		log.send("filename BEFORE linting:" + fileName,logDEBUG);
-	//lint the string
-		//we were previously saving it as the title name, but the LINK value has the proper file-format for the fileName...
-		auto iterator = fileName.find("https://");
-		if (iterator != std::string::npos)
-			fileName.replace(iterator, 8,"");
-		iterator = fileName.find('/');
-		for (;iterator != std::string::npos; iterator = fileName.find('/'))
-			fileName.replace(iterator, 1, "");
-		log.send("filename AFTER linting:" + fileName,logDEBUG);
-	//download
-		fileName = download_prefix + fileName;
-		if (!downloadFile(download, fileName, log)) {
+		if (!download.downloadFile()) {
 			log.send("failed to download file, skipping...", logERROR);
 			continue;
 		}
 	}
 	//update the config
-	log.send("updating the config file", logINFO);
+	log.send("updating the config file", logDEBUG);
 	std::ofstream new_xml(CONFIG_NAME);
 	new_xml << config_document;
 	new_xml.close();
 	config_document.clear();
-	log.send("<--EXIT-->", logINFO);
+	log.send("Config file updated", logINFO);
 	exit(EXIT_SUCCESS);
 }
