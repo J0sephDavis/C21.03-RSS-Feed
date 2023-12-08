@@ -99,15 +99,12 @@ class logger {
 		std::ostringstream os;
 };
 
-//TODO: better quit functions & logging, for what has been done by the program
 //TODO: make an easy way for the user to update the config
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
-//TODO: only update history node if we successfully download the file
-//TODO: look into using a global variable. We don't use threading, but see if/why it could cause an issue
+//TODO: look into using a global variable(for logging). We don't use threading, but see if/why it could cause an issue
 
 //TODO: add logging to write_data(...);
-//used with curl to download the file
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
 	return written;
