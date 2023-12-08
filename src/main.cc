@@ -52,6 +52,10 @@ class logger {
 			//https://stackoverflow.com/questions/28977585/how-to-get-put-time-into-a-variable
 			datetime.resize(std::strftime(&datetime[0], datetime.size(), "%Y-%m-%d_%H-%M", std::localtime(&time)));
 			std::string fileName = LOG_FOLDER + log_prefix + datetime + log_suffix;
+			if(!fs::exists(LOG_FOLDER)) {
+				//we don't catch the error, let it fail...
+				fs::create_directory(LOG_FOLDER);
+			}
 			//
 			std::cout << "log file=" << fileName << std::endl;
 			std::ofstream logFile(fileName);
@@ -78,6 +82,8 @@ class logger {
 			os << "[" << levelString(level)  << "]:\t";
 		}
 		std::string levelString(logLevel_t level) {
+			if (level == logTRACE)
+				return "TRACE";
 			if (level == logDEBUG)
 				return "DEBUG";
 			if (level == logINFO)
@@ -125,44 +131,54 @@ bool match_title(std::string Regular_Expression, std::string title, logger &log)
 		re_destroy(expression);
 		expression = next_inst;
 	}
-	log.send("match_title return:" + std::string((retval)?"true":"false"));
+	log.send("match_title return:" + std::string((retval)?"true":"false"), logDEBUG);
 	return retval;
 }
 
+
+//TODO: Single-respoinsibility, stop making this class handle configs & other functionaility...
+/* prepares to download a file given a url, path, & optionally a file name.
+ * If a file name is given, save to downloadPath/fileName
+ * If no file name is given, lint the url and make it the filename (removing slashes or other symbols)
+*/
 class download_entry {
 	public:
-		//TODO: instead of an std::string download_path & name_of_file, use std::filesystem::path
-		//fileName can only be empty when it is not an RSS file, we wont find it otherwise
-		download_entry(std::string url, logger &log, std::string download_path, std::string name_of_file = "") :
+		download_entry(logger &log, std::string url,std::string download_path) :
 			log(log),
 			url(url)
 		{
-			log.send("DOWNLOAD_ENTRY constructor called with:\n\turl:" + url + "\n\tdownload_path:" + download_path + "\n\tname:" + name_of_file, logDEBUG);
-			if (name_of_file == "") {
-				log.send("name_of_file==\"\", creating from linted url", logDEBUG);
-				fileName = url;
-				const std::string url_start = "https://";
-				auto iterator = fileName.find(url_start);
-				fileName.replace(iterator,url_start.size(),"");
-				log.send("\tfileName: " + fileName, logDEBUG);
+			log.send("No fileName provided, creating from linted url", logTRACE);
+			fileName = url;
+
+			const std::string url_start = "https://";
+			auto iterator = fileName.find(url_start);
+			fileName.replace(iterator,url_start.size(),"");
+			log.send("\tfileName: " + fileName, logDEBUG);
+			iterator = fileName.find('/');
+			while (iterator != std::string::npos) {
+				fileName.replace(iterator,1,"");
 				iterator = fileName.find('/');
-				while (iterator != std::string::npos) {
-					fileName.replace(iterator,1,"");
-					iterator = fileName.find('/');
-				}
-				fileName.insert(0,download_path);
-				log.send("\tfileName: " + fileName, logDEBUG);
 			}
-			else
-				fileName = download_path + name_of_file;
-			log.send("DOWNLOAD_ENTRY created with:\n\turl:" + url + "\n\tname:" + fileName, logDEBUG);
+
+			fileName.insert(0,download_path);
+			log.send("\tfileName: " + fileName, logDEBUG);
+		}
+		download_entry(logger &log, std::string url,std::string download_path, std::string name_of_file):
+			log(log),
+			url(url)
+		{
+			log.send("Called DOWNLOAD_ENTRY constructor", logTRACE);
+			log.send("called with:\n\turl:" + url + "\n\tdownload_path:" + download_path + "\n\tname:" + name_of_file, logDEBUG);
+			fileName = download_path + name_of_file;
+			log.send("created with:\n\turl:" + url + "\n\tname:" + fileName, logDEBUG);
 		};
 		~download_entry() {
 			log.send("DOWNLOAD_ENTRY destroyed with:\n\turl:" + url + "\n\tname:" + fileName, logDEBUG);
 		}
 		//downloads a file
 		bool fetch() {
-			log.send("DOWNLOAD_ENTRY::FETCH\t" + url + "\t" + fileName);
+			log.send("fetch", logTRACE);
+			log.send("url:" + url + "\tfileName: " + fileName, logDEBUG);
 			if(fs::exists(fileName)) {
 				log.send("FILE ALREADY EXISTS", logWARNING);
 #if !CLOBBER_FLAG
@@ -207,13 +223,68 @@ class download_entry {
 		}
 	private:
 		logger& log;
-		//url to download from
 		const std::string url;
-		//name of the file
 		std::string fileName;
 };
 
+//TODO: determine a new name for this class
+/* Update the config node on a successful download, IF title != NULL
+*/
+class rssContents : private download_entry {
+	public:
+//download_entry(logger &log, std::string url,std::string download_path, std::string name_of_file = "") :
+		rssContents(logger &log, rx::xml_node<> &config, char* title, std::string url, std::string download_folder) :
+			download_entry(log, url, download_folder),
+			log(log),
+			allocated_title(title),
+			associated_config(config)
+		{
+			log.send("rssContents constructor", logTRACE);
+			if (title != NULL)
+				log.send("title =" + std::string(title), logDEBUG);
+			log.send("url:" + url + ", folder:" + download_folder, logDEBUG);
+		};
+	public:
+		//you'd think this method name would be better in the parent class..
+		//Returns FALSE when:
+			/* file fails to download
+			 * when we fail to update the node*/
+		/*Returns TRUE when:
+		 	* file is successfully downloaded & title=NULL or we update history */
+		//what do we do when the file downloads successfully, but we fail to update the history? throw an exception & let the caller handle fixing the XML?
+		bool download() {
+			log.send("download()", logTRACE);
+			if(!this->fetch()) return false;
+			log.send("downloaded file", logTRACE);
 
+			if (allocated_title == NULL) return true;
+			log.send("allocated_title != NULL ==> updating history", logTRACE);
+			log.send("allocated_title: " + std::string(allocated_title), logDEBUG);
+			//text-nodes are nodes themself.... this the additional .first_node() call
+			//https://stackoverflow.com/questions/62785421/c-rapidxml-traversing-with-first-node-to-modify-the-value-of-a-node-in-an
+			associated_config.first_node("history")->first_node()->value(allocated_title);//config_document.allocate_string(entry_title.c_str()));
+			log.send("Updated history", logTRACE);
+			return true;
+		};
+	private:
+		logger& log;
+		const char* allocated_title;
+		rx::xml_node<>& associated_config;
+};
+//checks if a folder exists, if not it attempts to create the folder. returns true on success
+bool createFolderIfNotExist(logger &log, fs::path folder) {
+	if(!fs::exists(folder)) {
+		log.send(folder.string() + " does not exist. Attempting to create.", logWARNING);
+		try {
+			fs::create_directory(folder);
+			log.send("Created folder", logINFO);
+		} catch (fs::filesystem_error &e) {
+			log.send("Failed to create folder(" + folder.string() + ")\n" + e.what(),logERROR);
+			return false;
+		}
+	}
+	return true;
+}
 //Data we need:
 //Per title: (each an object in the XML file or possibly their own XML files) 
 // 	1. The regular expression to match
@@ -262,17 +333,11 @@ int main(void) {
 		config_nodes.push_back(item_node);
 	}
 	//downloads in format of: NAME, URL
-	std::vector<download_entry> download_links;
+	std::vector<rssContents> download_links;
 {//begin-scope
-	if (!fs::exists(RSS_FOLDER)) {
-		log.send("RSS_FOLDER not found" + std::string(RSS_FOLDER), logWARNING);
-		try {
-			log.send("Attempting to create " + std::string(RSS_FOLDER) + " directory", logTRACE);
-			fs::create_directory(RSS_FOLDER);
-		} catch (fs::filesystem_error &e) {
-			log.send("Failed to create directory", logERROR);
-			exit(EXIT_FAILURE);
-		}
+	if(!createFolderIfNotExist(log, RSS_FOLDER)) {
+		log.send("Quitting...");
+		exit(EXIT_FAILURE);
 	}
 	log.send("Checking Feeds:");
 	for (auto config : config_nodes) {
@@ -284,13 +349,15 @@ int main(void) {
 		log.send("NAME:" + configFeedName);
 		log.send("URL:" + url, logDEBUG);
 
-		download_entry config_download(url, log, RSS_FOLDER, configFeedName);
+		download_entry config_download(log, url, RSS_FOLDER, configFeedName);
 		if(!config_download.fetch()) {
 			log.send("Failed to download file. SKIPPING...", logERROR);
 			continue;
 		}
+		//
 		std::string feedHistory = config->first_node("history")->value();
 		log.send("HISTORY:" + feedHistory);
+		//
 	//2. parse the FEED
 		rx::xml_document<> feed;
 		rx::file<char> feedFile(config_download.getFileName());
@@ -303,16 +370,15 @@ int main(void) {
 			continue;
 		}
 	//3. Store download links & names to config
+		bool first = true;
 		char* regexpression = config->first_node("expr")->value();
 		log.send("Regular Expression:" + std::string(regexpression), logDEBUG);
-		std::string newHistory;
 		log.send("Begin fetching downloads", logTRACE);
 		for (auto *node = feed.first_node()->first_node()->first_node("item");
 				node;
 				node = node->next_sibling()) {
-			log.send("----------");
 			std::string entry_title = node->first_node("title")->value();
-			log.send("TITLE: " + entry_title);
+			log.send("ENTRY TITLE: " + entry_title, logDEBUG);
 			std::string entry_url = node->first_node("link")->value();
 			log.send("URL: " + entry_url, logDEBUG);
 			if (entry_title.compare(feedHistory) == 0) {
@@ -320,49 +386,35 @@ int main(void) {
 				break; //because it is in chronological order, we can just stop here
 			}
 			if (match_title(regexpression, entry_title, log)) {
-				if (newHistory.empty()) {
-					newHistory = entry_title;
-					log.send("NEW-HISTORY", logTRACE);
+				if (first) {
+					download_links.push_back(rssContents(log, *config, config_document.allocate_string(entry_title.c_str()), entry_url, DOWNLOAD_FOLDER));
+					first = false;
 				}
-				download_links.push_back(download_entry(entry_url, log, DOWNLOAD_FOLDER));
-				log.send("Added to downloads");
+				else download_links.push_back(rssContents(log, *config, NULL, entry_url, DOWNLOAD_FOLDER));
+				log.send("Added " + entry_title + " to downloads");
 			}
-		}
-		if (!newHistory.empty()) {
-			//text-nodes are nodes themself.... this the additional .first_node() call
-			//https://stackoverflow.com/questions/62785421/c-rapidxml-traversing-with-first-node-to-modify-the-value-of-a-node-in-an
-			config->first_node("history")->first_node()->value(config_document.allocate_string(newHistory.c_str()));
-			log.send("Allocated NEW-HISTORY node", logDEBUG);
 		}
 		feed.clear();
 	}
 }//end-scope
+	if (download_links.empty()) {
+		log.send("No Downloads. Quitting...");
+		exit(EXIT_SUCCESS);
+	}
+	log.send("<--" + std::to_string(download_links.size()) + " files to download-->");
 	//download the files
-	log.send("processing DOWNLOADS(" + std::to_string(download_links.size()) + ")");
-	if(!fs::exists(DOWNLOAD_FOLDER)) {
-		log.send("Download folder does not exist.", logWARNING);
-		try {
-			fs::create_directory(DOWNLOAD_FOLDER);
-			log.send("Created download folder: " + std::string(DOWNLOAD_FOLDER), logINFO);
-		} catch (fs::filesystem_error &e) {
-			log.send("Failed to create download folder. Quitting",logERROR);
-			exit(EXIT_FAILURE);
-		}
+	if(!createFolderIfNotExist(log, DOWNLOAD_FOLDER)) {
+		log.send("Quitting...");
+		exit(EXIT_FAILURE);
 	}
-	log.send("DOWNLOAD_PREFIX:" + std::string(DOWNLOAD_FOLDER), logDEBUG);
-	for (auto download : download_links) {
-		log.send("Downloading");
-		if (!download.fetch()) {
-			log.send("Failed to download file, skipping...", logERROR);
-			continue;
-		}
-	}
+	for (auto download : download_links) 
+		download.download(); 
 	//update the config
-	log.send("updating the config file", logTRACE);
+	log.send("Saving the updated config file", logTRACE);
 	std::ofstream new_xml(CONFIG_NAME);
 	new_xml << config_document;
 	new_xml.close();
+	log.send("Config file saved", logTRACE);
 	config_document.clear();
-	log.send("Config file updated", logTRACE);
 	exit(EXIT_SUCCESS);
 }
