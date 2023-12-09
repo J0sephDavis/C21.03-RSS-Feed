@@ -17,6 +17,7 @@
 #include <chrono> //for logging
 #include <ctime> //for logging
 
+//TODO set these directory & foler names in config.h.in
 #define CONFIG_NAME "rss-config.xml"
 #define RSS_FOLDER "./rss_feeds/"
 #define DOWNLOAD_FOLDER "./downloads/"
@@ -44,6 +45,7 @@
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
 //TODO: multi-thread downloads & processing
+//TODO: modify the download class to only enforce on rssContents, not when we download other files(like feeds which must be clobbered)
 
 namespace rssfeed {
 /*-------------------- BEGIN RSS FEED NAMESPACE --------------------*/
