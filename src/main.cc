@@ -1,3 +1,4 @@
+#include <csignal> //reference for SIGINT & SIGSEGV
 #include <config.h>
 #include <curlpp/Exception.hpp>
 #include <curlpp/OptionBase.hpp>
@@ -6,7 +7,6 @@
 #include <rapidxml_print.hpp>
 #include <rapidxml.hpp>
 #include <rapidxml_utils.hpp>
-namespace rx = rapidxml;
 #include <regex.c>
 //
 #include <cstdlib>
@@ -14,7 +14,6 @@ namespace rx = rapidxml;
 #include <tuple>
 #include <iostream>
 #include <filesystem>
-namespace fs = std::filesystem;
 #include <chrono> //for logging
 #include <ctime> //for logging
 
@@ -22,6 +21,35 @@ namespace fs = std::filesystem;
 #define RSS_FOLDER "./rss_feeds/"
 #define DOWNLOAD_FOLDER "./downloads/"
 #define LOG_FOLDER "./logs/"
+//Data we need:
+//Per title: (each an object in the XML file or possibly their own XML files) 
+// 	1. The regular expression to match
+// 	2. The History of downloaded filed (possibly just the last one)
+// 	3. The RSS feed to download & look into
+/* TODO: make an xml.dtd
+ * <xml ...> //HEADER
+ * <root>
+ * 	<item>
+ * 		<title>title of the feed or whatever - this is probably just for us</title>
+ * 		<feedFileName>FileName</feedFileName>
+ * 		<feed-url><![CDATA[https://examples.com/RSS]]</feed-url>
+ * 		<expr>
+ * 		<history>title of the last downloaded rss entry</history>
+ * 	</item>
+ * 	...ad infinitum
+ * </root>
+ * */
+
+//TODO: make an easy way for the user to update the config
+//TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
+//TODO: remove regex? might not be needed if the RSS is filtered right
+//TODO: look into using a global variable(for logging). We don't use threading, but see if/why it could cause an issue
+//TODO: multi-thread downloads & processing
+
+namespace rssfeed {
+/*-------------------- BEGIN RSS FEED NAMESPACE --------------------*/
+namespace fs = std::filesystem;
+namespace rx = rapidxml;
 enum logLevel_t {
 	logDEBUG, 	//
 	logTRACE, 	//trace exeuction across project. What logic was done
@@ -29,16 +57,22 @@ enum logLevel_t {
 	logINFO, 	//In gist, what has been/is being done
 	logERROR 	//a real problem that is detrimental to the functionality of the system.
 };
-//Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
 class logger {
+	//https://stackoverflow.com/questions/1008019/how-do-you-implement-the-singleton-design-pattern
+	//Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
 	//TODO: have log file update during program runtime, not just when it exits successfully...
 	public:
-		logger(logLevel_t level = logINFO):
-			loggerLevel(level) {
-				send("CONSTRUCT LOGGER", logTRACE);
-				send("VERSION" + std::string(PROJECT_VERSION));
-			};
+		static logger& getInstance(logLevel_t level = logINFO) {
+			//https://stackoverflow.com/questions/335369/finding-c-static-initialization-order-problems/335746#335746
+			//Take a look at destruction problems in that thread
+			static logger instance(level);
+			instance.send("getInstance()", logTRACE);
+			return instance;
+		}
+		 logger(logger const &) = delete;
+		 void operator=(logger const &) = delete;
 		~logger() {
+			std::cout << "DECONSTRUCT LOGGER";
 			send("DESTRUCT LOGGER", logTRACE);
 			os << std::endl; //flush
 			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -62,17 +96,12 @@ class logger {
 			logFile << os.str();
 			logFile.close();
 		}
-		//sends a message to the log
-		void send(std::string message, logLevel_t level = logINFO) {
-			//only print if we are >= to the logger level
-			if (level >= loggerLevel) {
-				preface_line(level);
-				os << message;
-#if COUT_LOG
-				std::cout << "\n" << message;
-#endif
-			}
-		}
+	private:
+		logger(logLevel_t level):
+			loggerLevel(level) {
+				send("CONSTRUCT LOGGER", logTRACE);
+				send("VERSION" + std::string(PROJECT_VERSION));
+			};
 	private:
 		//adds a timestamp and log-stamp
 		void preface_line(logLevel_t level) {
@@ -97,21 +126,30 @@ class logger {
 	private:
 		logLevel_t loggerLevel;
 		std::ostringstream os;
+	public:
+		//sends a message to the log
+		void send(std::string message, logLevel_t level = logINFO) {
+			//only print if we are >= to the logger level
+			if (level >= loggerLevel) {
+				preface_line(level);
+				os << message;
+#if COUT_LOG
+				std::cout << "\n" << message;
+#endif
+			}
+		}
+
 };
-
-//TODO: make an easy way for the user to update the config
-//TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
-//TODO: remove regex? might not be needed if the RSS is filtered right
-//TODO: look into using a global variable(for logging). We don't use threading, but see if/why it could cause an issue
-
-//TODO: add logging to write_data(...);
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
+//	static logger& log = logger::getInstance();
+//	log.send("WRITE_DATA",logTRACE);
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
 	return written;
 }
 
 //returns whether the given title matches the expression
-bool match_title(std::string Regular_Expression, std::string title, logger &log) {
+bool match_title(std::string Regular_Expression, std::string title) {
+	static logger& log = logger::getInstance();
 	log.send("match_title", logTRACE);
 	log.send("expression: "  + Regular_Expression +"\ttitle:" + title, logDEBUG);
 	regex expression = re_create_f_str(Regular_Expression.c_str());
@@ -140,8 +178,8 @@ bool match_title(std::string Regular_Expression, std::string title, logger &log)
 */
 class download_entry {
 	public:
-		download_entry(logger &log, std::string url,std::string download_path) :
-			log(log),
+		download_entry(std::string url,std::string download_path) :
+			log(logger::getInstance()),
 			url(url)
 		{
 			log.send("No fileName provided, creating from linted url", logTRACE);
@@ -160,8 +198,8 @@ class download_entry {
 			fileName.insert(0,download_path);
 			log.send("\tfileName: " + fileName, logDEBUG);
 		}
-		download_entry(logger &log, std::string url,std::string download_path, std::string name_of_file):
-			log(log),
+		download_entry(std::string url,std::string download_path, std::string name_of_file):
+			log(logger::getInstance()),
 			url(url)
 		{
 			log.send("Called DOWNLOAD_ENTRY constructor", logTRACE);
@@ -223,16 +261,15 @@ class download_entry {
 		const std::string url;
 		std::string fileName;
 };
-
 //TODO: determine a new name for this class
 /* Update the config node on a successful download, IF title != NULL
 */
 class rssContents : private download_entry {
 	public:
 //download_entry(logger &log, std::string url,std::string download_path, std::string name_of_file = "") :
-		rssContents(logger &log, rx::xml_node<> &config, char* title, std::string url, std::string download_folder) :
-			download_entry(log, url, download_folder),
-			log(log),
+		rssContents(rx::xml_node<> &config, char* title, std::string url, std::string download_folder) :
+			download_entry(url, download_folder),
+			log(logger::getInstance()),
 			allocated_title(title),
 			associated_config(config)
 		{
@@ -269,7 +306,8 @@ class rssContents : private download_entry {
 		rx::xml_node<>& associated_config;
 };
 //checks if a folder exists, if not it attempts to create the folder. returns true on success
-bool createFolderIfNotExist(logger &log, fs::path folder) {
+bool createFolderIfNotExist(fs::path folder) {
+	static logger& log = logger::getInstance();
 	if(!fs::exists(folder)) {
 		log.send(folder.string() + " does not exist. Attempting to create.", logWARNING);
 		try {
@@ -282,26 +320,22 @@ bool createFolderIfNotExist(logger &log, fs::path folder) {
 	}
 	return true;
 }
-//Data we need:
-//Per title: (each an object in the XML file or possibly their own XML files) 
-// 	1. The regular expression to match
-// 	2. The History of downloaded filed (possibly just the last one)
-// 	3. The RSS feed to download & look into
-/* TODO: make an xml.dtd
- * <xml ...> //HEADER
- * <root>
- * 	<item>
- * 		<title>title of the feed or whatever - this is probably just for us</title>
- * 		<feedFileName>FileName</feedFileName>
- * 		<feed-url><![CDATA[https://examples.com/RSS]]</feed-url>
- * 		<expr>
- * 		<history>title of the last downloaded rss entry</history>
- * 	</item>
- * 	...ad infinitum
- * </root>
- * */
+/*-------------------- END RSS FEED NAMESPACE --------------------*/
+}
+using namespace rssfeed;
+//
+static void signal_handler(int signal) {
+	static logger &log = logger::getInstance();
+	log.send("Signal(" + std::to_string(signal) + ") raised. quitting...", logERROR);
+	std::cout << "signal(" << signal << ") received: quitting\n";
+	exit(EXIT_FAILURE);
+}
 int main(void) {
-	static logger log(logWARNING);
+	static logger &log = logger::getInstance(logTRACE);
+	//signal handlers that ensure we properly deconstruct our static variables on exit
+	std::signal(SIGSEGV, signal_handler);
+	std::signal(SIGINT, signal_handler);
+	//
 	log.send("Starting RSS-Feed:");
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
@@ -332,7 +366,7 @@ int main(void) {
 	//downloads in format of: NAME, URL
 	std::vector<rssContents> download_links;
 {//begin-scope
-	if(!createFolderIfNotExist(log, RSS_FOLDER)) {
+	if(!createFolderIfNotExist(RSS_FOLDER)) {
 		log.send("Quitting...");
 		exit(EXIT_FAILURE);
 	}
@@ -346,7 +380,7 @@ int main(void) {
 		log.send("NAME:" + configFeedName);
 		log.send("URL:" + url, logDEBUG);
 
-		download_entry config_download(log, url, RSS_FOLDER, configFeedName);
+		download_entry config_download(url, RSS_FOLDER, configFeedName);
 		if(!config_download.fetch()) {
 			log.send("Failed to download file. SKIPPING...", logERROR);
 			continue;
@@ -382,12 +416,12 @@ int main(void) {
 				log.send("Download in history. skipping...", logTRACE);
 				break; //because it is in chronological order, we can just stop here
 			}
-			if (match_title(regexpression, entry_title, log)) {
+			if (match_title(regexpression, entry_title)) {
 				if (first) {
-					download_links.push_back(rssContents(log, *config, config_document.allocate_string(entry_title.c_str()), entry_url, DOWNLOAD_FOLDER));
+					download_links.push_back(rssContents(*config, config_document.allocate_string(entry_title.c_str()), entry_url, DOWNLOAD_FOLDER));
 					first = false;
 				}
-				else download_links.push_back(rssContents(log, *config, NULL, entry_url, DOWNLOAD_FOLDER));
+				else download_links.push_back(rssContents(*config, NULL, entry_url, DOWNLOAD_FOLDER));
 				log.send("Added " + entry_title + " to downloads");
 			}
 		}
@@ -400,7 +434,7 @@ int main(void) {
 	}
 	log.send("<--" + std::to_string(download_links.size()) + " files to download-->");
 	//download the files
-	if(!createFolderIfNotExist(log, DOWNLOAD_FOLDER)) {
+	if(!createFolderIfNotExist(DOWNLOAD_FOLDER)) {
 		log.send("Quitting...");
 		exit(EXIT_FAILURE);
 	}
