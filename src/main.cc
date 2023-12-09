@@ -43,7 +43,6 @@
 //TODO: make an easy way for the user to update the config
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
-//TODO: look into using a global variable(for logging). We don't use threading, but see if/why it could cause an issue
 //TODO: multi-thread downloads & processing
 
 namespace rssfeed {
@@ -72,7 +71,6 @@ class logger {
 		 logger(logger const &) = delete;
 		 void operator=(logger const &) = delete;
 		~logger() {
-			std::cout << "DECONSTRUCT LOGGER";
 			send("DESTRUCT LOGGER", logTRACE);
 			os << std::endl; //flush
 			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -331,7 +329,7 @@ static void signal_handler(int signal) {
 	exit(EXIT_FAILURE);
 }
 int main(void) {
-	static logger &log = logger::getInstance(logTRACE);
+	static logger &log = logger::getInstance(logWARNING);
 	//signal handlers that ensure we properly deconstruct our static variables on exit
 	std::signal(SIGSEGV, signal_handler);
 	std::signal(SIGINT, signal_handler);
