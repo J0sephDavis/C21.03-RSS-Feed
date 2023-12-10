@@ -1,3 +1,4 @@
+#include <mutex>
 #include <queue>
 #include <thread>
 #include <csignal> //reference for SIGINT & SIGSEGV
@@ -96,6 +97,7 @@ class logger {
 			//
 			std::cout << "log file=" << fileName << std::endl;
 			std::ofstream logFile(fileName);
+			clear_queue();
 			logFile << os.str();
 			logFile.close();
 		}
@@ -106,13 +108,6 @@ class logger {
 				send("VERSION" + std::string(PROJECT_VERSION));
 			};
 	private:
-		//adds a timestamp and log-stamp
-		void preface_line(logLevel_t level) {
-			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-			//each log will be "TIME LEVEL MESSAGE"
-			os << "\n-" << std::put_time(std::localtime(&time),"%c");
-			os << "[" << levelString(level)  << "]:\t";
-		}
 		std::string levelString(logLevel_t level) {
 			if (level == logTRACE)
 				return "TRACE";
@@ -126,21 +121,37 @@ class logger {
 				return "ERROR";
 			return "unknown-loglevel";
 		}
+		void clear_queue() {
+			std::lock_guard lock(queue_write);
+			for (; !messages.empty(); messages.pop()) {
+				auto& msg = messages.front();
+				os << msg.str();
+//				std::cout << "test:" << msg.str();
+			}
+		}
 	private:
 		logLevel_t loggerLevel;
 		//the actual output stream
 		std::ostringstream os;
 		std::queue<std::ostringstream>  messages;
+		std::mutex queue_write;
 	public:
 		//sends a message to the log
 		void send(std::string message, logLevel_t level = logINFO) {
+			if (messages.size() > 10) clear_queue();
 			//only print if we are >= to the logger level
 			if (level >= loggerLevel) {
-				preface_line(level);
-				os << message;
-#if COUT_LOG
-				std::cout << "\n" << message;
-#endif
+				std::lock_guard lock(queue_write); //released when function ends
+				std::ostringstream tmp_output;
+				std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+				//each log will be "TIME LEVEL MESSAGE"
+				tmp_output << "\n-" << std::put_time(std::localtime(&time),"%c");
+				tmp_output << "[" << levelString(level)  << "]:\t";
+				tmp_output << message;
+//#if COUT_LOG
+//				std::cout << "\n" + tmp_output;
+//#endif
+				messages.push(std::move(tmp_output));
 			}
 		}
 
@@ -342,6 +353,7 @@ class feed : private download_base {
 			if (!fetch()) throw std::runtime_error("Failed to download file");
 		};
 		void parse() {
+			log.send("PARSE_THREAD()", logTRACE);
 			if (doneParsing) return;
 		//2. parse the FEED
 			rx::xml_document<> feed;
@@ -372,6 +384,7 @@ class feed : private download_base {
 					if (newHistory == false) {
 						newHistory = true;
 						newHistoryTitle = entry_title;
+						log.send("set new history", logTRACE);
 					}
 					download_base tmp(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
 					downloads.push_back(std::move(tmp));
@@ -438,7 +451,6 @@ int main(void) {
 	}
 	//pointers to each config node
 	std::vector<feed> feeds;
-	int count = 0;
 	log.send("Collect entries from the config", logTRACE);
 	for (auto item_node = config_document.first_node()->first_node("item");
 			item_node;
@@ -450,22 +462,19 @@ int main(void) {
 		try {
 			feeds.push_back(feed(*item_node, configFeedName, url, regexpression, feedHistory));
 			log.send("Added feed() to vector", logTRACE);
-			if(count++ == 3) break;
 		} catch(std::runtime_error &e) {
 			log.send(e.what(), logERROR);
 		}
 	}
 	std::vector<std::thread> parsing_feeds;
 	//parse each feed in a thread
-	count = 0;
 	for (auto current_feed : feeds) {
 		log.send("creating thread",logTRACE);
 		auto t = std::thread(&feed::parse,(current_feed));
 		parsing_feeds.push_back(std::move(t));
-		if(count++ == 3)break;
 	}
 	//join threads
-	log.send("JOINING THREADS!!\n\n\n");
+	log.send("JOINING THREADS!!\n");
 	for (auto& t : parsing_feeds)
 		t.join();
 	//sequentially download each file
