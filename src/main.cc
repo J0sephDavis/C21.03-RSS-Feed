@@ -199,11 +199,7 @@ std::string url_to_filename(const std::string url) {
 	}
 	return fileName;
 }
-//TODO: Single-respoinsibility, stop making this class handle configs & other functionaility...
-/* prepares to download a file given a url, path, & optionally a file name.
- * If a file name is given, save to downloadPath/fileName
- * If no file name is given, lint the url and make it the filename (removing slashes or other symbols)
-*/
+//downloads a file from a url to the given path(includes filename)
 class download_base {
 	public:
 		download_base(std::string url,fs::path download_path) :
@@ -267,6 +263,45 @@ class download_base {
 		logger& log;
 		const std::string url;
 		fs::path filePath;
+};
+class downloadManager {
+	//TODO: have log file update during program runtime, not just when it exits successfully...
+	public:
+		static downloadManager& getInstance()
+		{
+			static downloadManager instance;
+			return instance;
+		}
+		 downloadManager(downloadManager const &) = delete;
+		 void operator=(downloadManager const &) = delete;
+		~downloadManager() {
+			log.send("DESTRUCT downloadManager", logTRACE);
+		}
+	private:
+		downloadManager():
+		log(logger::getInstance())
+		{
+			log.send("CONSTRUCT downloadManager", logTRACE);
+		};
+	private:
+		std::queue<download_base>  downloads;
+		std::mutex queue_write;
+		logger& log;
+	public:
+		void add(std::string url, fs::path filePath) {
+			std::lock_guard lock(queue_write); //released when function ends
+			log.send("add()",logTRACE);
+			log.send("path:" + filePath.string() + ", url: " + url, logDEBUG);
+			downloads.emplace(url, filePath);
+		}
+		void run() {
+			std::lock_guard lock(queue_write);
+			while (!downloads.empty()) {
+				downloads.front().fetch();
+				downloads.pop();
+			}
+		}
+
 };
 //TODO: determine a new name for this class
 /* Update the config node on a successful download, IF title != NULL
@@ -343,6 +378,7 @@ class feed : private download_base {
 			download_base(url, RSS_FOLDER + fileName),
 			config_ref(config_ptr),
 			log(logger::getInstance()),
+			downloads(downloadManager::getInstance()),
 			feedHistory(history),
 			regexpression(regex)
 		{
@@ -386,8 +422,7 @@ class feed : private download_base {
 						newHistoryTitle = entry_title;
 						log.send("set new history", logTRACE);
 					}
-					download_base tmp(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
-					downloads.push_back(std::move(tmp));
+					downloads.add(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
 					log.send("Added " + entry_title + " to downloads");
 				}
 			}
@@ -403,18 +438,15 @@ class feed : private download_base {
 			if (newHistory) return newHistoryTitle;
 			else return feedHistory;
 		}
-		const std::vector<download_base> getDownloads() {
-			return downloads;
-		}
 	private:
 		const rx::xml_node<>& config_ref;
 		logger& log;
+		downloadManager& downloads;
 	private:
 		bool newHistory = false;
 		std::string newHistoryTitle;
 		const std::string feedHistory;
 		const char* regexpression;
-		std::vector<download_base> downloads;
 		//prevent the main function from being run twice
 		bool doneParsing = false;
 };
@@ -478,20 +510,25 @@ int main(void) {
 	for (auto& t : parsing_feeds)
 		t.join();
 	//sequentially download each file
-	for (auto current_feed : feeds) {
-		//current_feed.parse();
-		auto files = current_feed.getDownloads();
-		if (!files.empty()) {
-			for (auto file : files) {
-				if (!file.fetch())
-					log.send("Failed to download file");
-				else
-					log.send("downloaded file");
-			}
-			//download files
-		}
-		//update history
-	}
+	log.send("begin downloading");
+	auto& downloads = downloadManager::getInstance();
+	downloads.run();
+//	for (auto current_feed : feeds) {
+//		//current_feed.parse();
+//		auto files = current_feed.getDownloads();
+//
+//		log.send("<-downloads(" + std::to_string(files.size()) + ")->", logDEBUG);
+//		if (!files.empty()) {
+//			for (auto file : files) {
+//				if (!file.fetch())
+//					log.send("Failed to download file");
+//				else
+//					log.send("downloaded file");
+//			}
+//			//download files
+//		}
+//		//update history
+//	}
 	
 	
 	//
