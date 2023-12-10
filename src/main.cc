@@ -47,7 +47,7 @@
 //TODO: make an easy way for the user to update the config
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
-//TODO: multi-thread downloads & processing
+//TODO: multi-thread filedownloads
 //TODO: modify the download class to only enforce on rssContents, not when we download other files(like feeds which must be clobbered)
 
 namespace rssfeed {
@@ -301,52 +301,7 @@ class downloadManager {
 				downloads.pop();
 			}
 		}
-
 };
-//TODO: determine a new name for this class
-/* Update the config node on a successful download, IF title != NULL
-*/
-//class rssContents : private download_base {
-//	public:
-////download_base(logger &log, std::string url,std::string download_path, std::string name_of_file = "") :
-//		rssContents(rx::xml_node<> &config, char* title, std::string url, std::string download_folder) :
-//			download_base(url, download_folder),
-//			log(logger::getInstance()),
-//			allocated_title(title),
-//			associated_config(config)
-//		{
-//			log.send("rssContents constructor", logTRACE);
-//			if (title != NULL)
-//				log.send("title =" + std::string(title), logDEBUG);
-//			log.send("url:" + url + ", folder:" + download_folder, logDEBUG);
-//		};
-//	public:
-//		//you'd think this method name would be better in the parent class..
-//		//Returns FALSE when:
-//			/* file fails to download
-//			 * when we fail to update the node*/
-//		/*Returns TRUE when:
-//		 	* file is successfully downloaded & title=NULL or we update history */
-//		//what do we do when the file downloads successfully, but we fail to update the history? throw an exception & let the caller handle fixing the XML?
-//		bool download() {
-//			log.send("download()", logTRACE);
-//			if(!this->fetch()) return false;
-//			log.send("downloaded file", logTRACE);
-//
-//			if (allocated_title == NULL) return true;
-//			log.send("allocated_title != NULL ==> updating history", logTRACE);
-//			log.send("allocated_title: " + std::string(allocated_title), logDEBUG);
-//			//text-nodes are nodes themself.... this the additional .first_node() call
-//			//https://stackoverflow.com/questions/62785421/c-rapidxml-traversing-with-first-node-to-modify-the-value-of-a-node-in-an
-//			associated_config.first_node("history")->first_node()->value(allocated_title);//config_document.allocate_string(entry_title.c_str()));
-//			log.send("Updated history", logTRACE);
-//			return true;
-//		};
-//	private:
-//		logger& log;
-//		const char* allocated_title;
-//		rx::xml_node<>& associated_config;
-//};
 //checks if a folder exists, if not it attempts to create the folder. returns true on success
 bool createFolderIfNotExist(fs::path folder) {
 	static logger& log = logger::getInstance();
@@ -433,6 +388,10 @@ class feed : private download_base {
 		const rx::xml_node<>& getConfigRef() {
 			return config_ref;
 		}
+		bool isNewHistory() {
+			log.send("isNewHistory()",logTRACE);
+			return newHistory;
+		}
 		//if downloads != empty, then the history received MUST be new
 		const std::string getHistory() {
 			if (newHistory) return newHistoryTitle;
@@ -492,7 +451,8 @@ int main(void) {
 		std::string feedHistory = item_node->first_node("history")->value();
 		char* regexpression = item_node->first_node("expr")->value();
 		try {
-			feeds.push_back(feed(*item_node, configFeedName, url, regexpression, feedHistory));
+			auto tmp = feed(*item_node, configFeedName, url, regexpression, feedHistory);
+			feeds.emplace_back(std::move(tmp));
 			log.send("Added feed() to vector", logTRACE);
 		} catch(std::runtime_error &e) {
 			log.send(e.what(), logERROR);
@@ -500,40 +460,25 @@ int main(void) {
 	}
 	std::vector<std::thread> parsing_feeds;
 	//parse each feed in a thread
-	for (auto current_feed : feeds) {
+	for (auto& current_feed : feeds) {
 		log.send("creating thread",logTRACE);
-		auto t = std::thread(&feed::parse,(current_feed));
+		auto t = std::thread(&feed::parse,std::ref(current_feed));
 		parsing_feeds.push_back(std::move(t));
 	}
 	//join threads
-	log.send("JOINING THREADS!!\n");
+	log.send("joining threads");
 	for (auto& t : parsing_feeds)
 		t.join();
 	//sequentially download each file
-	log.send("begin downloading");
-	auto& downloads = downloadManager::getInstance();
-	downloads.run();
-//	for (auto current_feed : feeds) {
-//		//current_feed.parse();
-//		auto files = current_feed.getDownloads();
-//
-//		log.send("<-downloads(" + std::to_string(files.size()) + ")->", logDEBUG);
-//		if (!files.empty()) {
-//			for (auto file : files) {
-//				if (!file.fetch())
-//					log.send("Failed to download file");
-//				else
-//					log.send("downloaded file");
-//			}
-//			//download files
-//		}
-//		//update history
-//	}
-	
-	
-	//
-	log.send("reminder to re-enable config update");
-	exit(EXIT_SUCCESS);
+	downloadManager::getInstance().run();
+	log.send("checking feeds for updated histories", logTRACE);
+	for (auto& current_feed : feeds) {
+		if (current_feed.isNewHistory()) {
+			current_feed.getConfigRef().first_node("history")->first_node()->value(config_document.allocate_string(current_feed.getHistory().c_str()));
+			log.send("Updated history",logTRACE);
+			log.send("newHistory:" + current_feed.getHistory(),logDEBUG);
+		}
+	}
 	//update the config
 	log.send("Saving the updated config file", logTRACE);
 	std::ofstream new_xml(CONFIG_NAME);
