@@ -343,6 +343,14 @@ int main(void) {
 		log.send("Quitting...");
 		exit(EXIT_FAILURE);
 	}
+	if(!createFolderIfNotExist(RSS_FOLDER)) {
+		log.send("Quitting...");
+		exit(EXIT_FAILURE);
+	}
+	if(!createFolderIfNotExist(DOWNLOAD_FOLDER)) {
+		log.send("Quitting...");
+		exit(EXIT_FAILURE);
+	}
 	//loads the files... they both must live together
 	static rx::xml_document<> config_document;
 	static rx::file<> config_file(CONFIG_NAME);
@@ -366,19 +374,17 @@ int main(void) {
 	//downloads in format of: NAME, URL
 	std::vector<rssContents> download_links;
 {//begin-scope
-	if(!createFolderIfNotExist(RSS_FOLDER)) {
-		log.send("Quitting...");
-		exit(EXIT_FAILURE);
-	}
 	log.send("Checking Feeds:");
 	for (auto config : config_nodes) {
 	//1. download its linked RSS feed & set some data
 		std::string configFeedName = config->first_node("feedFileName")->value();
 		std::string url = config->first_node("feed-url")->first_node()->value();
+		std::string feedHistory = config->first_node("history")->value();
 
 		log.send("----------");
 		log.send("NAME:" + configFeedName);
 		log.send("URL:" + url, logDEBUG);
+		log.send("HISTORY:" + feedHistory);
 
 		download_entry config_download(url, RSS_FOLDER, configFeedName);
 		if(!config_download.fetch()) {
@@ -386,8 +392,6 @@ int main(void) {
 			continue;
 		}
 		//
-		std::string feedHistory = config->first_node("history")->value();
-		log.send("HISTORY:" + feedHistory);
 		//
 	//2. parse the FEED
 		rx::xml_document<> feed;
@@ -433,11 +437,6 @@ int main(void) {
 		exit(EXIT_SUCCESS);
 	}
 	log.send("<--" + std::to_string(download_links.size()) + " files to download-->");
-	//download the files
-	if(!createFolderIfNotExist(DOWNLOAD_FOLDER)) {
-		log.send("Quitting...");
-		exit(EXIT_FAILURE);
-	}
 	for (auto download : download_links) 
 		download.download(); 
 	//update the config

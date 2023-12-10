@@ -39,6 +39,14 @@ else()
 	target_compile_definitions(RSS-Feed PRIVATE CLOBBER_FLAG=0)
 endif()
 configure_file("${PROJECT_SOURCE_DIR}/src/config.h.in" "config.h" @ONLY)
+#https://stackoverflow.com/questions/34143265/undefined-reference-to-symbol-pthread-createglibc-2-2-5
+set(CMAKE_THREAD_LIBS_INIT "-lpthread")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+set(CMAKE_HAVE_THREADS_LIBRARY 1)
+set(CMAKE_USE_WIN32_THREADS_INIT 0)
+set(CMAKE_USE_PTHREADS_INIT 1)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+
 set_target_properties(RSS-Feed PROPERTIES CXX_STANDARD 20)
 #fetchContent & find_package failed to properly link libcurlpp....
-target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic)
+target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic -lpthread)
