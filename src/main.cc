@@ -25,6 +25,7 @@
 #define RSS_FOLDER "./rss_feeds/"
 #define DOWNLOAD_FOLDER "./downloads/"
 #define LOG_FOLDER "./logs/"
+#define LOG_QUEUE_MAXLEN 10
 //Data we need:
 //Per title: (each an object in the XML file or possibly their own XML files) 
 // 	1. The regular expression to match
@@ -64,7 +65,6 @@ enum logLevel_t {
 class logger {
 	//https://stackoverflow.com/questions/1008019/how-do-you-implement-the-singleton-design-pattern
 	//Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
-	//TODO: queue with mutext for multiple producers (of input) & one consumer (the logger as it writes)
 	//TODO: have log file update during program runtime, not just when it exits successfully...
 	public:
 		static logger& getInstance(logLevel_t level = logINFO) {
@@ -122,11 +122,14 @@ class logger {
 			return "unknown-loglevel";
 		}
 		void clear_queue() {
+			//TODO consider a swap() method if threads are held up by logs(or reduce logging)
 			std::lock_guard lock(queue_write);
 			for (; !messages.empty(); messages.pop()) {
 				auto& msg = messages.front();
 				os << msg.str();
-//				std::cout << "test:" << msg.str();
+#if COUT_LOG
+				std::cout <<  msg.str();
+#endif
 			}
 		}
 	private:
@@ -138,27 +141,25 @@ class logger {
 	public:
 		//sends a message to the log
 		void send(std::string message, logLevel_t level = logINFO) {
-			if (messages.size() > 10) clear_queue();
+			if (messages.size() > LOG_QUEUE_MAXLEN) clear_queue();
 			//only print if we are >= to the logger level
 			if (level >= loggerLevel) {
-				std::lock_guard lock(queue_write); //released when function ends
 				std::ostringstream tmp_output;
 				std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 				//each log will be "TIME LEVEL MESSAGE"
 				tmp_output << "\n-" << std::put_time(std::localtime(&time),"%c");
 				tmp_output << "[" << levelString(level)  << "]:\t";
 				tmp_output << message;
-//#if COUT_LOG
-//				std::cout << "\n" + tmp_output;
-//#endif
-				messages.push(std::move(tmp_output));
+				//critical section
+				{
+					std::lock_guard lock(queue_write); //released when function ends
+					messages.push(std::move(tmp_output));
+				}
 			}
 		}
 
 };
 static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
-//	static logger& log = logger::getInstance();
-//	log.send("WRITE_DATA",logTRACE);
 	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
 	return written;
 }
@@ -411,7 +412,7 @@ class feed : private download_base {
 };
 
 int main(void) {
-	static logger &log = logger::getInstance(logDEBUG);
+	static logger &log = logger::getInstance(logWARNING);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist", logERROR);
