@@ -7,8 +7,8 @@
 #include <ctime>
 #include <mutex>
 #include <queue>
+#include <config.h>
 //
-#define LOG_FOLDER "./logs/"
 
 namespace rssfeed {
 //begin namespace
@@ -115,5 +115,5 @@ class logger {
 
 };
 //end namespace
-};
+}
 #endif
