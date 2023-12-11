@@ -8,17 +8,14 @@ project(RSS-Feed
 add_executable(RSS-Feed 
 	src/main.cc
 )
-find_package( CURL REQUIRED )
-
+add_subdirectory(curlpp_v81)
 target_include_directories(RSS-Feed
 	PRIVATE src rapidxml-1.13 curlpp_v81
 	"${PROJECT_BINARY_DIR}"
 )
-
 target_link_libraries(RSS-Feed 
+	PUBLIC curlpp_static
 	INTERFACE rapidxml
-	PUBLIC CURL::libcurl
-	PUBLIC curlpp
 )
 
 option(PRINT_LOGS "Print Logs to STDOUT" OFF)
