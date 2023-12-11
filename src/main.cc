@@ -1,36 +1,21 @@
-#include <mutex>
-#include <queue>
+#include <logger.hpp>
+#include <download_handling.hpp>
+#include <config.h>
+//
 #include <sys/select.h>
 #include <thread>
 #include <csignal> //reference for SIGINT & SIGSEGV
-#include <config.h>
-//
-#include <curl/multi.h>
-#include <curlpp/cURLpp.hpp>
-#include <curlpp/Easy.hpp>
-#include <curlpp/Multi.hpp>
-#include <curlpp/Options.hpp>
-#include <curlpp/OptionBase.hpp>
-#include <curlpp/Exception.hpp>
 //
 #include <rapidxml_print.hpp>
 #include <rapidxml.hpp>
 #include <rapidxml_utils.hpp>
-#include <regex.c>
 //
 #include <cstdlib>
 #include <stdexcept>
 #include <tuple>
-#include <iostream>
 #include <filesystem>
-#include <chrono> //for logging
-#include <ctime> //for logging
-
-//TODO set these directory & foler names in config.h.in
+//TODO: set in config.h
 #define CONFIG_NAME "rss-config.xml"
-#define RSS_FOLDER "./rss_feeds/"
-#define DOWNLOAD_FOLDER "./downloads/"
-#define LOG_FOLDER "./logs/"
 //Data we need:
 //Per title: (each an object in the XML file or possibly their own XML files) 
 // 	1. The regular expression to match
@@ -54,352 +39,12 @@
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
 //TODO: modify the download class to only enforce on rssContents, not when we download other files(like feeds which must be clobbered)
+//TODO: Work with/around rate-limits to 
 
 namespace rssfeed {
 /*-------------------- BEGIN RSS FEED NAMESPACE --------------------*/
 namespace fs = std::filesystem;
 namespace rx = rapidxml;
-enum logLevel_t {
-	logDEBUG, 	//
-	logTRACE, 	//trace exeuction across project. What logic was done
-	logWARNING, 	//Things that might have caused problems but don't affect the end functionality of the system
-	logINFO, 	//In gist, what has been/is being done
-	logERROR 	//a real problem that is detrimental to the functionality of the system.
-};
-class logger {
-	//https://stackoverflow.com/questions/1008019/how-do-you-implement-the-singleton-design-pattern
-	//Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
-	//TODO: have log file update during program runtime, not just when it exits successfully...
-	public:
-		static logger& getInstance(logLevel_t level = logINFO) {
-			//https://stackoverflow.com/questions/335369/finding-c-static-initialization-order-problems/335746#335746
-			//Take a look at destruction problems in that thread
-			static logger instance(level);
-			instance.send("getInstance()", logTRACE);
-			return instance;
-		}
-		 logger(logger const &) = delete;
-		 void operator=(logger const &) = delete;
-		~logger() {
-			send("DESTRUCT LOGGER", logTRACE);
-			os << std::endl; //flush
-			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-			const std::string log_prefix = "rss-feed-";
-			const std::string log_suffix = ".log";
-#define logs_folder_len 7
-#define timestamp_len 16
-			std::string datetime(logs_folder_len + timestamp_len + log_prefix.size() + log_suffix.size() + 10
-					,0
-			);
-			//https://stackoverflow.com/questions/28977585/how-to-get-put-time-into-a-variable
-			datetime.resize(std::strftime(&datetime[0], datetime.size(), "%Y-%m-%d_%H-%M", std::localtime(&time)));
-			std::string fileName = LOG_FOLDER + log_prefix + datetime + log_suffix;
-			if(!fs::exists(LOG_FOLDER)) {
-				//we don't catch the error, let it fail...
-				fs::create_directory(LOG_FOLDER);
-			}
-			//
-			std::cout << "log file=" << fileName << std::endl;
-			std::ofstream logFile(fileName);
-			clear_queue();
-			logFile << os.str();
-			logFile.close();
-		}
-	private:
-		logger(logLevel_t level):
-			loggerLevel(level) {
-				send("CONSTRUCT LOGGER", logTRACE);
-				send("VERSION" + std::string(PROJECT_VERSION));
-			};
-	private:
-		std::string levelString(logLevel_t level) {
-			if (level == logTRACE)
-				return "TRACE";
-			if (level == logDEBUG)
-				return "DEBUG";
-			if (level == logINFO)
-				return "INFO";
-			if (level == logWARNING)
-				return "WARNING";
-			if (level == logERROR)
-				return "ERROR";
-			return "unknown-loglevel";
-		}
-		void clear_queue() {
-			std::lock_guard lock(queue_write);
-			for (; !messages.empty(); messages.pop()) {
-				auto& msg = messages.front();
-				os << msg.str();
-//				std::cout << "test:" << msg.str();
-			}
-		}
-	private:
-		logLevel_t loggerLevel;
-		//the actual output stream
-		std::ostringstream os;
-		std::queue<std::ostringstream>  messages;
-		std::mutex queue_write;
-	public:
-		//sends a message to the log
-		void send(std::string message, logLevel_t level = logINFO) {
-			if (messages.size() > 10) clear_queue();
-			//only print if we are >= to the logger level
-			if (level >= loggerLevel) {
-				std::lock_guard lock(queue_write); //released when function ends
-				std::ostringstream tmp_output;
-				std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-				//each log will be "TIME LEVEL MESSAGE"
-				tmp_output << "\n-" << std::put_time(std::localtime(&time),"%c");
-				tmp_output << "[" << levelString(level)  << "]:\t";
-				tmp_output << message;
-//#if COUT_LOG
-				std::cout << tmp_output.str();
-//#endif
-				messages.push(std::move(tmp_output));
-			}
-		}
-
-};
-static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
-//	static logger& log = logger::getInstance();
-//	log.send("WRITE_DATA",logTRACE);
-	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
-	return written;
-}
-
-//returns whether the given title matches the expression
-bool match_title(std::string Regular_Expression, std::string title) {
-	static logger& log = logger::getInstance();
-	log.send("match_title", logTRACE);
-	log.send("expression: "  + Regular_Expression +"\ttitle:" + title, logDEBUG);
-	regex expression = re_create_f_str(Regular_Expression.c_str());
-	bool retval = match(expression, title.c_str());
-	//this is to destroy the expression... I really ought to edit C14.02 and move this into a function there
-	while(expression) {
-		regex next_inst;
-		if (re_getChild(expression))
-			next_inst = re_getChild(expression);
-		else if (re_getAlternate(expression))
-			next_inst = re_getAlternate(expression);
-		else
-			next_inst = re_getNext(expression);
-		re_destroy(expression);
-		expression = next_inst;
-	}
-	log.send("match_title return:" + std::string((retval)?"true":"false"), logDEBUG);
-	return retval;
-}
-
-
-std::string url_to_filename(const std::string url) {
-	std::string fileName = url;
-	const std::string url_start = "https://";
-	auto iterator = fileName.find(url_start);
-	fileName.replace(iterator,url_start.size(),"");
-	iterator = fileName.find('/');
-	while (iterator != std::string::npos) {
-		fileName.replace(iterator,1,"");
-		iterator = fileName.find('/');
-	}
-	return fileName;
-}
-//downloads a file from a url to the given path(includes filename)
-class download_base {
-	public:
-		download_base(std::string url,fs::path download_path) :
-			log(logger::getInstance()),
-			url(url)
-		{
-			filePath = download_path;
-			log.send("Called DOWNLOAD_ENTRY constructor", logTRACE);
-			log.send("called with:\n\turl:" + url + "\n\tdownload_path:" + download_path.string(), logDEBUG);
-		};
-		~download_base() {
-			log.send("DOWNLOAD_ENTRY destroyed",logTRACE);
-		}
-		//downloads a file
-		bool fetch() {
-			log.send("fetch", logTRACE);
-			log.send("url:" + url + "\tpath: " + filePath.string(), logDEBUG);
-			if(fs::exists(filePath)) {
-				log.send("FILE ALREADY EXISTS", logWARNING);
-#if !CLOBBER_FLAG
-				return false;
-#endif
-			}
-			//TODO: handle fclose() & returns in a clean manner
-			//this section of code somewhat irks me. Not the curlpp,
-			//but the error handling & that we are using a FILE* rather than an fstream.
-			//Must look into how we can get to an fstream with curlpp write callback
-			FILE* pagefile = fopen(filePath.c_str(), "wb");
-			try {
-				//set options, URL, Write callback function, progress output, &c
-				curlpp::Easy request;
-				request.setOpt<curlpp::options::Url>(url);
-				request.setOpt<curlpp::options::NoProgress>(true);
-				request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
-				//write to the file
-				if (pagefile) {
-					request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
-					request.perform();
-					fclose(pagefile);
-					log.send("File downloaded successfully");
-					return true;
-				}
-				else {
-					perror("Error");
-					return false;
-				}
-			}
-			catch (curlpp::LogicError &e) {
-				log.send("Failed to download file: " + std::string(e.what()), logERROR);
-			}
-			catch (curlpp::RuntimeError &e) {
-				log.send("Failed to download file: " + std::string(e.what()), logERROR);
-			}
-			fclose(pagefile);
-			return false;
-		}
-		const fs::path getPath() {
-			return filePath;
-		}
-		const std::string getURL() {
-			return url;
-		}
-	private:
-		logger& log;
-		const std::string url;
-		fs::path filePath;
-};
-class downloadManager {
-	public:
-		static downloadManager& getInstance()
-		{
-			static downloadManager instance;
-			return instance;
-		}
-		 downloadManager(downloadManager const &) = delete;
-		 void operator=(downloadManager const &) = delete;
-		~downloadManager() {
-			log.send("DESTRUCT downloadManager", logTRACE);
-		}
-	private:
-		downloadManager():
-			log(logger::getInstance())
-		{
-			log.send("CONSTRUCT downloadManager", logTRACE);
-			curlpp::initialize();
-		};
-	private:
-		std::queue<download_base>  downloads;
-		std::mutex queue_write;
-		logger& log;
-	public:
-		void add(std::string url, fs::path filePath) {
-			std::lock_guard lock(queue_write); //released when function ends
-			log.send("add()",logTRACE);
-			log.send("path:" + filePath.string() + ", url: " + url, logDEBUG);
-			downloads.emplace(url, filePath);
-		}
-		void run() {
-			std::lock_guard lock(queue_write);
-			while (!downloads.empty()) {
-				downloads.front().fetch();
-				downloads.pop();
-			}
-		}
-		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4) {
-			std::vector<std::pair<curlpp::Easy *, FILE *>> requests;
-			log.send("getRequests()",logTRACE);
-			std::lock_guard lock(queue_write);
-			for (size_t i = 0; i < num_get && !downloads.empty(); i++) {
-				curlpp::Easy *request = new curlpp::Easy();
-				FILE* pagefile = fopen(downloads.front().getPath().c_str(), "wb");
-				if (pagefile) {
-					request->setOpt(new curlpp::options::WriteFile(pagefile));
-					request->setOpt(new curlpp::Options::Url(downloads.front().getURL()));
-					request->setOpt(new curlpp::Options::NoProgress(true));
-					request->setOpt(new curlpp::Options::WriteFunctionCurlFunction(write_data));
-
-					requests.push_back(std::pair(std::move(request),std::move(pagefile)));
-					downloads.pop();
-				}
-				else {
-					log.send("FAILED TO ADD REQUEST BECAUSE PAGEFILE=NULL",logERROR);
-					break;
-				}
-			}
-			return (requests);
-		}
-		void multirun(int batchSize) {
-			log.send("multirun() called", logTRACE);
-			log.send("batch size: " + std::to_string(batchSize), logDEBUG);
-		/*
-		 * Current problem: multi_perform makes too many requests too quickly causes for the host to rate-limit us & return bad-data.
-		 * However, if we use sequential downloads of easy_requests, they take far too long going one-by-one.
-		 * Solution: Instead of operating on the set N of requests, split into subsets to gather in batches.
-		 * If N=20 request, perform in small batches of approximately n=4 with a sleep timer between.
-		 * */
-			while(!downloads.empty()) {
-				log.send("Begin downloading batch", logTRACE);
-				CURLM *multi_handle = curl_multi_init();
-				long max_conn = (batchSize > 2) ? batchSize/2 : 2;
-				log.send("max_host_connections = " + std::to_string(max_conn),logDEBUG);
-				curl_multi_setopt(multi_handle, CURLMOPT_MAX_HOST_CONNECTIONS, max_conn);
-				//get the requests & tie them to files
-				auto requests = getRequests(batchSize);
-				if (requests.empty()) {
-					log.send("NO REQUESTS", logERROR);
-					break;
-				}
-				for (auto& request : requests) {
-					curl_multi_add_handle(multi_handle, request.first->getHandle());
-					log.send("Added easy handle to multi_hanle", logDEBUG);
-				}
-				//https://github.com/jpbarrette/curlpp/blob/master/examples/example13.cpp
-				int handles_left;
-				do {
-					log.send("multi_perform loop:", logDEBUG);
-					CURLMcode multi_code = curl_multi_perform(multi_handle, &handles_left);
-					log.send("handles_left:" + std::to_string(handles_left) ,logDEBUG);
-					if (!multi_code && handles_left) {
-						//wait for activity or timeout or "nothing" -> https://curl.se/libcurl/c/curl_multi_perform.html
-						multi_code = curl_multi_poll(multi_handle, NULL, 0, 1000, NULL);
-					}
-					if (multi_code) {
-						log.send("curl_multi_poll() failed with code:" + std::to_string(multi_code),logERROR);
-						break;
-					}
-					//there are more transfers, LOOP
-				} while(handles_left);
-				CURLMsg* multi_info;
-				do {
-					log.send("checking for multi_info messages", logTRACE);
-					multi_info = curl_multi_info_read(multi_handle,&handles_left);
-					if(multi_info) {
-						if (multi_info->msg == CURLMSG_DONE) {
-							log.send("multi_info->msg = CURLMSG_DONE", logDEBUG);
-							for (auto handle : requests) {
-								if (handle.first->getHandle() == multi_info->easy_handle) {
-									log.send("removing handles from multi_handle & closing files", logTRACE);
-									log.send("handle result:" + std::to_string(multi_info->data.result), logDEBUG);
-									fclose(handle.second);
-									curl_multi_remove_handle(multi_handle, multi_info->easy_handle);
-								}
-							}
-						}
-						else log.send("multi_info->msg = " + std::to_string(multi_info->msg));
-					}
-					else log.send("multi_info == NULL", logDEBUG);
-				} while(multi_info);
-				curl_multi_cleanup(multi_handle);
-				log.send("cleanup multi handle", logTRACE);
-				log.send("SLEEP TWO SECONDS", logDEBUG);
-				std::this_thread::sleep_for(std::chrono::seconds(2));
-			}
-			log.send("multirun() return");
-		}
-};
 //checks if a folder exists, if not it attempts to create the folder. returns true on success
 bool createFolderIfNotExist(fs::path folder) {
 	static logger& log = logger::getInstance();
@@ -425,93 +70,10 @@ static void signal_handler(int signal) {
 	std::cout << "signal(" << signal << ") received: quitting\n";
 	exit(EXIT_FAILURE);
 }
-class feed : public download_base {
-	public:
-		feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history):
-			download_base(url, RSS_FOLDER + fileName),
-			config_ref(config_ptr),
-			log(logger::getInstance()),
-			downloads(downloadManager::getInstance()),
-			feedHistory(history),
-			regexpression(regex)
-		{
-			log.send("feed constructor",logTRACE);
-			log.send("NAME:" + this->getPath().string());
-			log.send("URL:" + url, logDEBUG);
-			log.send("HISTORY:" + feedHistory);
-		};
-		//only call if it has been downloaded
-		void parse() {
-			log.send("PARSE_THREAD()", logTRACE);
-			if (doneParsing) return;
-		//2. parse the FEED
-			rx::xml_document<> feed;
-			rx::file<char> feedFile(getPath());
-			try {
-				log.send("Parsing RSS", logTRACE);
-				feed.parse<rx::parse_no_data_nodes>(feedFile.data());
-			} catch(rx::parse_error &e) {
-				log.send("Failed to parse" + std::string(e.what()) + "\nskipping...", logERROR);
-				feed.clear();
-				throw std::runtime_error("Failed to parse file");
-			}
-		//3. Store download links & names to config
-			log.send("Regular Expression:" + std::string(regexpression), logDEBUG);
-			log.send("Begin fetching downloads", logTRACE);
-			for (auto *node = feed.first_node()->first_node()->first_node("item");
-					node;
-					node = node->next_sibling()) {
-				std::string entry_title = node->first_node("title")->value();
-				log.send("ENTRY TITLE: " + entry_title, logDEBUG);
-				std::string entry_url = node->first_node("link")->value();
-				log.send("URL: " + entry_url, logDEBUG);
-				if (entry_title.compare(feedHistory) == 0) {
-					log.send("Download in history. skipping...", logTRACE);
-					break; //because it is in chronological order, we can just stop here
-				}
-				if (match_title(regexpression, entry_title)) {
-					if (newHistory == false) {
-						newHistory = true;
-						newHistoryTitle = entry_title;
-						log.send("set new history", logTRACE);
-					}
-					downloads.add(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
-					log.send("Added " + entry_title + " to downloads");
-				}
-			}
-			feed.clear();
-			doneParsing = true;
-		}
-		//returns the pointer to the xml child in the config relating to this feed
-		const rx::xml_node<>& getConfigRef() {
-			return config_ref;
-		}
-		//returns true if a file is slated for download
-		bool isNewHistory() {
-			log.send("isNewHistory()",logTRACE);
-			return newHistory;
-		}
-		//if downloads != empty, then the history received MUST be new
-		const std::string getHistory() {
-			if (newHistory) return newHistoryTitle;
-			else return feedHistory;
-		}
-	private:
-		const rx::xml_node<>& config_ref;
-		logger& log;
-		downloadManager& downloads;
-	private:
-		bool newHistory = false;
-		std::string newHistoryTitle;
-		const std::string feedHistory;
-		const char* regexpression;
-		//prevent the main function from being run twice
-		bool doneParsing = false;
-};
 
 int main(void) {
 	static logger &log = logger::getInstance(logWARNING);
-	static downloadManager &download_manager = downloadManager::getInstance();
+	static download_manager &downloadManager = download_manager::getInstance();
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist", logERROR);
@@ -552,7 +114,7 @@ int main(void) {
 		char* regexpression = item_node->first_node("expr")->value();
 		try {
 			auto tmp = feed(*item_node, configFeedName, url, regexpression, feedHistory);
-			download_manager.add(url, tmp.getPath());
+			downloadManager.add(url, tmp.getPath());
 			feeds.emplace_back(std::move(tmp));
 			log.send("Added feed() to vector & download manager", logTRACE);
 		} catch(std::runtime_error &e) {
@@ -560,7 +122,7 @@ int main(void) {
 		}
 	}
 	//download the feeds channel
-	download_manager.multirun(4);
+	downloadManager.multirun(4);
 	std::vector<std::thread> parsing_feeds;
 	//parse each feed in a thread
 	for (auto& current_feed : feeds) {
@@ -573,7 +135,7 @@ int main(void) {
 	for (auto& t : parsing_feeds)
 		t.join();
 	//download the files in baches
-	download_manager.multirun(4);
+	downloadManager.multirun(4);
 	log.send("checking feeds for updated histories", logTRACE);
 	for (auto& current_feed : feeds) {
 		if (current_feed.isNewHistory()) {
