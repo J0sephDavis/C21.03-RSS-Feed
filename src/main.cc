@@ -53,7 +53,6 @@
 //TODO: make an easy way for the user to update the config
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
-//TODO: multi-thread filedownloads
 //TODO: modify the download class to only enforce on rssContents, not when we download other files(like feeds which must be clobbered)
 
 namespace rssfeed {
@@ -70,7 +69,6 @@ enum logLevel_t {
 class logger {
 	//https://stackoverflow.com/questions/1008019/how-do-you-implement-the-singleton-design-pattern
 	//Modified from: https://drdobbs.com/cpp/logging-in-c/201804215
-	//TODO: queue with mutext for multiple producers (of input) & one consumer (the logger as it writes)
 	//TODO: have log file update during program runtime, not just when it exits successfully...
 	public:
 		static logger& getInstance(logLevel_t level = logINFO) {
@@ -274,7 +272,6 @@ class download_base {
 		fs::path filePath;
 };
 class downloadManager {
-	//TODO: have log file update during program runtime, not just when it exits successfully...
 	public:
 		static downloadManager& getInstance()
 		{
@@ -288,7 +285,7 @@ class downloadManager {
 		}
 	private:
 		downloadManager():
-		log(logger::getInstance())
+			log(logger::getInstance())
 		{
 			log.send("CONSTRUCT downloadManager", logTRACE);
 			curlpp::initialize();
@@ -442,7 +439,6 @@ class feed : public download_base {
 			log.send("NAME:" + this->getPath().string());
 			log.send("URL:" + url, logDEBUG);
 			log.send("HISTORY:" + feedHistory);
-//			if (!fetch()) throw std::runtime_error("Failed to download file");
 		};
 		//only call if it has been downloaded
 		void parse() {
@@ -490,6 +486,7 @@ class feed : public download_base {
 		const rx::xml_node<>& getConfigRef() {
 			return config_ref;
 		}
+		//returns true if a file is slated for download
 		bool isNewHistory() {
 			log.send("isNewHistory()",logTRACE);
 			return newHistory;
@@ -513,7 +510,7 @@ class feed : public download_base {
 };
 
 int main(void) {
-	static logger &log = logger::getInstance(logDEBUG);
+	static logger &log = logger::getInstance(logWARNING);
 	static downloadManager &download_manager = downloadManager::getInstance();
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
