@@ -3,7 +3,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(RSS-Feed
   LANGUAGES CXX
-  VERSION 1.1.1
+  VERSION 1.1.2
 )
 add_executable(RSS-Feed 
 	src/main.cc
@@ -35,6 +35,10 @@ else()
 	message("clobber is off")
 	target_compile_definitions(RSS-Feed PRIVATE CLOBBER_FLAG=0)
 endif()
+#for config.h
+set(LOG_FOLDER "${PROJECT_SOURCE_DIR}/build/logs/")
+set(RSS_FOLDER "${PROJECT_SOURCE_DIR}/build/rss_feeds/")
+set(DOWNLOAD_FOLDER "${PROJECT_SOURCE_DIR}/build/downloads/")
 configure_file("${PROJECT_SOURCE_DIR}/src/config.h.in" "config.h" @ONLY)
 #https://stackoverflow.com/questions/34143265/undefined-reference-to-symbol-pthread-createglibc-2-2-5
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
