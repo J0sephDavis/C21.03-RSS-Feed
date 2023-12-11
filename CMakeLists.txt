@@ -3,7 +3,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(RSS-Feed
   LANGUAGES CXX
-  VERSION 1.1.0
+  VERSION 1.1.1
 )
 add_executable(RSS-Feed 
 	src/main.cc
@@ -14,7 +14,7 @@ target_include_directories(RSS-Feed
 	"${PROJECT_BINARY_DIR}"
 )
 target_link_libraries(RSS-Feed 
-	PUBLIC curlpp_static
+	PRIVATE curlpp
 	INTERFACE rapidxml
 )
 
@@ -45,5 +45,4 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 set_target_properties(RSS-Feed PROPERTIES CXX_STANDARD 20)
-#fetchContent & find_package failed to properly link libcurlpp....
 target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic -lpthread)

@@ -1,12 +1,18 @@
 #include <mutex>
 #include <queue>
+#include <sys/select.h>
 #include <thread>
 #include <csignal> //reference for SIGINT & SIGSEGV
 #include <config.h>
-#include <curlpp/Exception.hpp>
-#include <curlpp/OptionBase.hpp>
+//
+#include <curl/multi.h>
+#include <curlpp/cURLpp.hpp>
 #include <curlpp/Easy.hpp>
+#include <curlpp/Multi.hpp>
 #include <curlpp/Options.hpp>
+#include <curlpp/OptionBase.hpp>
+#include <curlpp/Exception.hpp>
+//
 #include <rapidxml_print.hpp>
 #include <rapidxml.hpp>
 #include <rapidxml_utils.hpp>
@@ -149,7 +155,7 @@ class logger {
 				tmp_output << "[" << levelString(level)  << "]:\t";
 				tmp_output << message;
 //#if COUT_LOG
-//				std::cout << "\n" + tmp_output;
+				std::cout << tmp_output.str();
 //#endif
 				messages.push(std::move(tmp_output));
 			}
@@ -259,6 +265,9 @@ class download_base {
 		const fs::path getPath() {
 			return filePath;
 		}
+		const std::string getURL() {
+			return url;
+		}
 	private:
 		logger& log;
 		const std::string url;
@@ -282,6 +291,7 @@ class downloadManager {
 		log(logger::getInstance())
 		{
 			log.send("CONSTRUCT downloadManager", logTRACE);
+			curlpp::initialize();
 		};
 	private:
 		std::queue<download_base>  downloads;
@@ -300,6 +310,97 @@ class downloadManager {
 				downloads.front().fetch();
 				downloads.pop();
 			}
+		}
+		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4) {
+			std::vector<std::pair<curlpp::Easy *, FILE *>> requests;
+			log.send("getRequests()",logTRACE);
+			std::lock_guard lock(queue_write);
+			for (size_t i = 0; i < num_get && !downloads.empty(); i++) {
+				curlpp::Easy *request = new curlpp::Easy();
+				FILE* pagefile = fopen(downloads.front().getPath().c_str(), "wb");
+				if (pagefile) {
+					request->setOpt(new curlpp::options::WriteFile(pagefile));
+					request->setOpt(new curlpp::Options::Url(downloads.front().getURL()));
+					request->setOpt(new curlpp::Options::NoProgress(true));
+					request->setOpt(new curlpp::Options::WriteFunctionCurlFunction(write_data));
+
+					requests.push_back(std::pair(std::move(request),std::move(pagefile)));
+					downloads.pop();
+				}
+				else {
+					log.send("FAILED TO ADD REQUEST BECAUSE PAGEFILE=NULL",logERROR);
+					break;
+				}
+			}
+			return (requests);
+		}
+		void multirun(int batchSize) {
+			log.send("multirun() called", logTRACE);
+			log.send("batch size: " + std::to_string(batchSize), logDEBUG);
+		/*
+		 * Current problem: multi_perform makes too many requests too quickly causes for the host to rate-limit us & return bad-data.
+		 * However, if we use sequential downloads of easy_requests, they take far too long going one-by-one.
+		 * Solution: Instead of operating on the set N of requests, split into subsets to gather in batches.
+		 * If N=20 request, perform in small batches of approximately n=4 with a sleep timer between.
+		 * */
+			while(!downloads.empty()) {
+				log.send("Begin downloading batch", logTRACE);
+				CURLM *multi_handle = curl_multi_init();
+				long max_conn = (batchSize > 2) ? batchSize/2 : 2;
+				log.send("max_host_connections = " + std::to_string(max_conn),logDEBUG);
+				curl_multi_setopt(multi_handle, CURLMOPT_MAX_HOST_CONNECTIONS, max_conn);
+				//get the requests & tie them to files
+				auto requests = getRequests(batchSize);
+				if (requests.empty()) {
+					log.send("NO REQUESTS", logERROR);
+					break;
+				}
+				for (auto& request : requests) {
+					curl_multi_add_handle(multi_handle, request.first->getHandle());
+					log.send("Added easy handle to multi_hanle", logDEBUG);
+				}
+				//https://github.com/jpbarrette/curlpp/blob/master/examples/example13.cpp
+				int handles_left;
+				do {
+					log.send("multi_perform loop:", logDEBUG);
+					CURLMcode multi_code = curl_multi_perform(multi_handle, &handles_left);
+					log.send("handles_left:" + std::to_string(handles_left) ,logDEBUG);
+					if (!multi_code && handles_left) {
+						//wait for activity or timeout or "nothing" -> https://curl.se/libcurl/c/curl_multi_perform.html
+						multi_code = curl_multi_poll(multi_handle, NULL, 0, 1000, NULL);
+					}
+					if (multi_code) {
+						log.send("curl_multi_poll() failed with code:" + std::to_string(multi_code),logERROR);
+						break;
+					}
+					//there are more transfers, LOOP
+				} while(handles_left);
+				CURLMsg* multi_info;
+				do {
+					log.send("checking for multi_info messages", logTRACE);
+					multi_info = curl_multi_info_read(multi_handle,&handles_left);
+					if(multi_info) {
+						if (multi_info->msg == CURLMSG_DONE) {
+							log.send("multi_info->msg = CURLMSG_DONE", logDEBUG);
+							for (auto handle : requests) {
+								if (handle.first->getHandle() == multi_info->easy_handle) {
+									log.send("removing handles from multi_handle & closing files", logTRACE);
+									log.send("handle result:" + std::to_string(multi_info->data.result), logDEBUG);
+									fclose(handle.second);
+									curl_multi_remove_handle(multi_handle, multi_info->easy_handle);
+								}
+							}
+						}
+						else log.send("multi_info->msg = " + std::to_string(multi_info->msg));
+					}
+					else log.send("multi_info == NULL", logDEBUG);
+				} while(multi_info);
+				curl_multi_cleanup(multi_handle);
+				log.send("cleanup multi handle", logTRACE);
+				log.send("SLEEP TWO SECONDS", logDEBUG);
+				std::this_thread::sleep_for(std::chrono::seconds(2));
+			}
+			log.send("multirun() return");
 		}
 };
 //checks if a folder exists, if not it attempts to create the folder. returns true on success
@@ -327,7 +428,7 @@ static void signal_handler(int signal) {
 	std::cout << "signal(" << signal << ") received: quitting\n";
 	exit(EXIT_FAILURE);
 }
-class feed : private download_base {
+class feed : public download_base {
 	public:
 		feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history):
 			download_base(url, RSS_FOLDER + fileName),
@@ -341,8 +442,9 @@ class feed : private download_base {
 			log.send("NAME:" + this->getPath().string());
 			log.send("URL:" + url, logDEBUG);
 			log.send("HISTORY:" + feedHistory);
-			if (!fetch()) throw std::runtime_error("Failed to download file");
+//			if (!fetch()) throw std::runtime_error("Failed to download file");
 		};
+		//only call if it has been downloaded
 		void parse() {
 			log.send("PARSE_THREAD()", logTRACE);
 			if (doneParsing) return;
@@ -412,6 +514,7 @@ class feed : private download_base {
 
 int main(void) {
 	static logger &log = logger::getInstance(logDEBUG);
+	static downloadManager &download_manager = downloadManager::getInstance();
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist", logERROR);
@@ -452,12 +555,15 @@ int main(void) {
 		char* regexpression = item_node->first_node("expr")->value();
 		try {
 			auto tmp = feed(*item_node, configFeedName, url, regexpression, feedHistory);
+			download_manager.add(url, tmp.getPath());
 			feeds.emplace_back(std::move(tmp));
-			log.send("Added feed() to vector", logTRACE);
+			log.send("Added feed() to vector & download manager", logTRACE);
 		} catch(std::runtime_error &e) {
 			log.send(e.what(), logERROR);
 		}
 	}
+	//download the feeds channel
+	download_manager.multirun(4);
 	std::vector<std::thread> parsing_feeds;
 	//parse each feed in a thread
 	for (auto& current_feed : feeds) {
@@ -469,8 +575,8 @@ int main(void) {
 	log.send("joining threads");
 	for (auto& t : parsing_feeds)
 		t.join();
-	//sequentially download each file
-	downloadManager::getInstance().run();
+	//download the files in baches
+	download_manager.multirun(4);
 	log.send("checking feeds for updated histories", logTRACE);
 	for (auto& current_feed : feeds) {
 		if (current_feed.isNewHistory()) {
