@@ -25,7 +25,9 @@
 
 namespace rssfeed {
 //BEGIN NAMESPACE
-//downloads a file from a url to the given path(includes filename)
+/*
+ * 	DOWNLOAD_BASE
+ * */
 class download_base {
 	public:
 		download_base(std::string url,fs::path download_path);
@@ -39,6 +41,33 @@ class download_base {
 		const std::string url;
 		fs::path filePath;
 };
+/*
+ * 	FEED
+ * */
+class feed : public download_base {
+	public:
+		feed(rapidxml::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history);
+		void parse();
+		const rapidxml::xml_node<>& getConfigRef();
+		bool isNewHistory();
+		const std::string getHistory();
+		//TODO create accessor function
+		std::vector<download_base> content_files;
+	private:
+		const rapidxml::xml_node<>& config_ref;
+		logger& log;
+		//download_manager& downloads;
+	private:
+		bool newHistory = false;
+		std::string newHistoryTitle;
+		const std::string feedHistory;
+		const char* regexpression;
+		//prevent the main function from being run twice
+		bool doneParsing = false;
+};
+/*
+ * 	DOWNLOAD_MANAGER
+ * */
 class download_manager {
 	public:
 		static download_manager& getInstance();
@@ -52,30 +81,9 @@ class download_manager {
 		std::mutex queue_write;
 		logger& log;
 	public:
-		void add(std::string url, fs::path filePath);
 		void add(download_base &download);
-		//void run();
 		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4);
 		void multirun(int batchSize);
-};
-class feed : public download_base {
-	public:
-		feed(rapidxml::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history);
-		void parse();
-		const rapidxml::xml_node<>& getConfigRef();
-		bool isNewHistory();
-		const std::string getHistory();
-	private:
-		const rapidxml::xml_node<>& config_ref;
-		logger& log;
-		download_manager& downloads;
-	private:
-		bool newHistory = false;
-		std::string newHistoryTitle;
-		const std::string feedHistory;
-		const char* regexpression;
-		//prevent the main function from being run twice
-		bool doneParsing = false;
 };
 //END NAMESPACE
 }

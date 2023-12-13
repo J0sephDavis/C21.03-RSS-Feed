@@ -62,6 +62,7 @@ const std::string download_base::getURL() {
 	return url;
 }
 //download_base END
+
 //download_manager START
 download_manager& download_manager::getInstance()
 {
@@ -77,18 +78,11 @@ download_manager::download_manager():
 	log.send("download_manager::download_manager", logTRACE);
 	curlpp::initialize();
 }
-void download_manager::add(std::string url, fs::path filePath) {
-	std::lock_guard lock(queue_write); //released when function ends
+//adds download by referece, current intent is for use with feeds
+void download_manager::add(download_base& download) {
 	log.send("download_manager::add",logTRACE);
-	log.send("path:" + filePath.string() + ", url: " + url, logDEBUG);
-	downloads.emplace(url, filePath);
-}
-void download_manager::run() {
-	std::lock_guard lock(queue_write);
-	while (!downloads.empty()) {
-		downloads.front().fetch();
-		downloads.pop();
-	}
+	//TODO determine if this avoids copy-construction
+	downloads.emplace(download);
 }
 std::vector<std::pair<curlpp::Easy *, FILE *>> download_manager::getRequests(size_t num_get) {
 	std::vector<std::pair<curlpp::Easy *, FILE *>> requests;
@@ -187,7 +181,7 @@ feed::feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, ch
 	download_base(url, RSS_FOLDER + fileName),
 	config_ref(config_ptr),
 	log(logger::getInstance()),
-	downloads(download_manager::getInstance()),
+//	downloads(download_manager::getInstance()),
 	feedHistory(history),
 	regexpression(regex)
 {
@@ -231,7 +225,7 @@ void feed::parse() {
 				newHistoryTitle = entry_title;
 				log.send("set new history", logTRACE);
 			}
-			downloads.add(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
+			content_files.push_back(download_base(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url))));
 			log.send("Added " + entry_title + " to downloads");
 		}
 	}
