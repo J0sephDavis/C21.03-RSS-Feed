@@ -29,13 +29,13 @@ class logger {
 			//https://stackoverflow.com/questions/335369/finding-c-static-initialization-order-problems/335746#335746
 			//Take a look at destruction problems in that thread
 			static logger instance(level);
-			instance.send("getInstance()", logTRACE);
+			instance.send("logger::getInstance", logTRACE);
 			return instance;
 		}
 		 logger(logger const &) = delete;
 		 void operator=(logger const &) = delete;
 		~logger() {
-			send("DESTRUCT LOGGER", logTRACE);
+			send("logger::~logger", logTRACE);
 			os << std::endl; //flush
 			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 			const std::string log_prefix = "rss-feed-";
@@ -62,7 +62,7 @@ class logger {
 	private:
 		logger(logLevel_t level):
 			loggerLevel(level) {
-				send("CONSTRUCT LOGGER", logTRACE);
+				send("logger::logger", logTRACE);
 				send("VERSION" + std::string(PROJECT_VERSION));
 			};
 	private:

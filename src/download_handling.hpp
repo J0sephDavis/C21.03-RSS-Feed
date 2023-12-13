@@ -39,15 +39,15 @@ class download_base {
 			url(url)
 		{
 			filePath = download_path;
-			log.send("Called DOWNLOAD_ENTRY constructor", logTRACE);
+			log.send("download_base::download_base", logTRACE);
 			log.send("called with:\n\turl:" + url + "\n\tdownload_path:" + download_path.string(), logDEBUG);
 		};
 		~download_base() {
-			log.send("DOWNLOAD_ENTRY destroyed",logTRACE);
+			log.send("download_base::~download_base",logTRACE);
 		}
 		//downloads a file
 		bool fetch() {
-			log.send("fetch", logTRACE);
+			log.send("download_base::fetch", logTRACE);
 			log.send("url:" + url + "\tpath: " + filePath.string(), logDEBUG);
 			if(fs::exists(filePath)) {
 				log.send("FILE ALREADY EXISTS", logWARNING);
@@ -109,13 +109,13 @@ class download_manager {
 		 download_manager(download_manager const &) = delete;
 		 void operator=(download_manager const &) = delete;
 		~download_manager() {
-			log.send("DESTRUCT download_manager", logTRACE);
+			log.send("download_manager::~download_manager", logTRACE);
 		}
 	private:
 		download_manager():
 			log(logger::getInstance())
 		{
-			log.send("CONSTRUCT download_manager", logTRACE);
+			log.send("download_manager::download_manager", logTRACE);
 			curlpp::initialize();
 		};
 	private:
@@ -125,7 +125,7 @@ class download_manager {
 	public:
 		void add(std::string url, fs::path filePath) {
 			std::lock_guard lock(queue_write); //released when function ends
-			log.send("add()",logTRACE);
+			log.send("download_manager::add",logTRACE);
 			log.send("path:" + filePath.string() + ", url: " + url, logDEBUG);
 			downloads.emplace(url, filePath);
 		}
@@ -138,7 +138,7 @@ class download_manager {
 		}
 		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4) {
 			std::vector<std::pair<curlpp::Easy *, FILE *>> requests;
-			log.send("getRequests()",logTRACE);
+			log.send("download_manager::getRequests",logTRACE);
 			std::lock_guard lock(queue_write);
 			for (size_t i = 0; i < num_get && !downloads.empty(); i++) {
 				curlpp::Easy *request = new curlpp::Easy();
@@ -160,7 +160,7 @@ class download_manager {
 			return (requests);
 		}
 		void multirun(int batchSize) {
-			log.send("multirun() called", logTRACE);
+			log.send("download_manager::multirun", logTRACE);
 			log.send("batch size: " + std::to_string(batchSize), logDEBUG);
 		/*
 		 * Current problem: multi_perform makes too many requests too quickly causes for the host to rate-limit us & return bad-data.
@@ -225,7 +225,6 @@ class download_manager {
 				log.send("SLEEP TWO SECONDS", logDEBUG);
 				std::this_thread::sleep_for(std::chrono::seconds(2));
 			}
-			log.send("multirun() return");
 		}
 };
 namespace rx = rapidxml;
@@ -239,14 +238,14 @@ class feed : public download_base {
 			feedHistory(history),
 			regexpression(regex)
 		{
-			log.send("feed constructor",logTRACE);
+			log.send("feed::feed()",logTRACE);
 			log.send("NAME:" + this->getPath().string());
 			log.send("URL:" + url, logDEBUG);
 			log.send("HISTORY:" + feedHistory);
 		};
 		//only call if it has been downloaded
 		void parse() {
-			log.send("PARSE_THREAD()", logTRACE);
+			log.send("feed::parse", logTRACE);
 			if (doneParsing) return;
 		//2. parse the FEED
 			rx::xml_document<> feed;
@@ -288,15 +287,17 @@ class feed : public download_base {
 		}
 		//returns the pointer to the xml child in the config relating to this feed
 		const rx::xml_node<>& getConfigRef() {
+			log.send("feed::getConfigRef", logTRACE);
 			return config_ref;
 		}
 		//returns true if a file is slated for download
 		bool isNewHistory() {
-			log.send("isNewHistory()",logTRACE);
+			log.send("feed::isNewHistory",logTRACE);
 			return newHistory;
 		}
 		//if downloads != empty, then the history received MUST be new
 		const std::string getHistory() {
+			log.send("feed::getHistory", logTRACE);
 			if (newHistory) return newHistoryTitle;
 			else return feedHistory;
 		}

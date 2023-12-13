@@ -66,7 +66,7 @@ bool createFolderIfNotExist(fs::path folder) {
 using namespace rssfeed;
 //
 void inititalize_program() {
-	static logger &log = logger::getInstance(logWARNING);
+	static logger &log = logger::getInstance(logTRACE);
 	log.send("starting initialization", logTRACE);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";

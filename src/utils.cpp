@@ -10,7 +10,7 @@ static void signal_handler(int signal) {
 //returns whether the given title matches the expression
 bool match_title(std::string Regular_Expression, std::string title) {
 	static logger& log = logger::getInstance();
-	log.send("match_title", logTRACE);
+	log.send("(rssfeed)match_title", logTRACE);
 	log.send("expression: "  + Regular_Expression +"\ttitle:" + title, logDEBUG);
 	regex expression = re_create_f_str(Regular_Expression.c_str());
 	bool retval = match(expression, title.c_str());
@@ -32,6 +32,7 @@ bool match_title(std::string Regular_Expression, std::string title) {
 
 
 std::string url_to_filename(const std::string url) {
+	logger::getInstance().send("(rssfeed)url_to_filename", logTRACE);
 	std::string fileName = url;
 	const std::string url_start = "https://";
 	auto iterator = fileName.find(url_start);
