@@ -1,6 +1,12 @@
 #include <logger.hpp>
 #include <regex.c>
 namespace rssfeed{
+static size_t write_data(char *ptr, size_t size, size_t nmemb, void *stream) {
+//	static logger& log = logger::getInstance();
+//	log.send("WRITE_DATA",logTRACE);
+	size_t written = fwrite(ptr, size, nmemb, (FILE *) stream);
+	return written;
+}
 static void signal_handler(int signal) {
 	static logger &log = logger::getInstance();
 	log.send("Signal(" + std::to_string(signal) + ") raised. quitting...", logERROR);
