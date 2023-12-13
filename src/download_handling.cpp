@@ -8,7 +8,7 @@ download_base::download_base(std::string url,fs::path download_path) :
 	filePath = download_path;
 	log.send("download_base::download_base", logTRACE);
 	log.send("called with:\n\turl:" + url + "\n\tdownload_path:" + download_path.string(), logDEBUG);
-};
+}
 download_base::~download_base() {
 	log.send("download_base::~download_base",logTRACE);
 }
@@ -32,7 +32,7 @@ bool download_base::fetch() {
 		curlpp::Easy request;
 		request.setOpt<curlpp::options::Url>(url);
 		request.setOpt<curlpp::options::NoProgress>(true);
-		request.setOpt(curlpp::options::WriteFunctionCurlFunction(write_data));
+		request.setOpt(curlpp::options::WriteFunctionCurlFunction(rssfeed::write_data));
 		//write to the file
 		if (pagefile) {
 			request.setOpt<curlpp::OptionTrait<void*, CURLOPT_WRITEDATA>>(pagefile);
@@ -76,7 +76,7 @@ download_manager::download_manager():
 {
 	log.send("download_manager::download_manager", logTRACE);
 	curlpp::initialize();
-};
+}
 void download_manager::add(std::string url, fs::path filePath) {
 	std::lock_guard lock(queue_write); //released when function ends
 	log.send("download_manager::add",logTRACE);
@@ -195,7 +195,7 @@ feed::feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, ch
 	log.send("NAME:" + this->getPath().string());
 	log.send("URL:" + url, logDEBUG);
 	log.send("HISTORY:" + feedHistory);
-};
+}
 //only call if it has been downloaded
 void feed::parse() {
 	log.send("feed::parse", logTRACE);

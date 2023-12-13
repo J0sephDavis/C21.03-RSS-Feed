@@ -1,5 +1,5 @@
 #include <logger.hpp>
-#include <download_handling.hpp>
+#include <download_handling.cpp>
 #include <config.h>
 //
 //
@@ -66,6 +66,7 @@ bool createFolderIfNotExist(fs::path folder) {
 using namespace rssfeed;
 //
 void inititalize_program() {
+	(void)write_data;
 	static logger &log = logger::getInstance(logTRACE);
 	log.send("starting initialization", logTRACE);
 	if (!fs::exists(CONFIG_NAME)) {
