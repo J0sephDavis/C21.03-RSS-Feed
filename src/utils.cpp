@@ -1,6 +1,12 @@
 #include <logger.hpp>
 #include <regex.c>
 namespace rssfeed{
+static void signal_handler(int signal) {
+	static logger &log = logger::getInstance();
+	log.send("Signal(" + std::to_string(signal) + ") raised. quitting...", logERROR);
+	std::cout << "signal(" << signal << ") received: quitting\n";
+	exit(EXIT_FAILURE);
+}
 //returns whether the given title matches the expression
 bool match_title(std::string Regular_Expression, std::string title) {
 	static logger& log = logger::getInstance();

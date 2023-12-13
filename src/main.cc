@@ -64,12 +64,6 @@ bool createFolderIfNotExist(fs::path folder) {
 }
 using namespace rssfeed;
 //
-static void signal_handler(int signal) {
-	static logger &log = logger::getInstance();
-	log.send("Signal(" + std::to_string(signal) + ") raised. quitting...", logERROR);
-	std::cout << "signal(" << signal << ") received: quitting\n";
-	exit(EXIT_FAILURE);
-}
 
 int main(void) {
 	static logger &log = logger::getInstance(logWARNING);
@@ -89,7 +83,7 @@ int main(void) {
 		exit(EXIT_FAILURE);
 	}
 	//signal handlers that ensure we properly deconstruct our static variables on exit
-	std::signal(SIGSEGV, signal_handler);
+	std::signal(SIGSEGV, rssfeed::signal_handler);
 	std::signal(SIGINT, signal_handler);
 	//loads the files... they both must live together
 	static rx::xml_document<> config_document;
