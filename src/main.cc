@@ -91,7 +91,7 @@ int main(void) {
 	inititalize_program();
 	static logger &log = logger::getInstance(logWARNING);
 	static download_manager &downloadManager = download_manager::getInstance();
-	//loads the files... they both must live together
+	//config_document & config_file must live & die with the program. Consider placing them into a static class or struct, we rely on them being static such that they are cleaned up with exit(...)
 	static rx::xml_document<> config_document;
 	static rx::file<> config_file(CONFIG_NAME);
 	try {
@@ -102,6 +102,7 @@ int main(void) {
 		log.send("Failed to parse config:" + std::string(e.what()), logERROR);
 		exit(EXIT_FAILURE);
 	}
+
 	//pointers to each config node
 	std::vector<feed> feeds;
 	log.send("Collect entries from the config", logTRACE);
