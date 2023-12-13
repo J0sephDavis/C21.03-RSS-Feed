@@ -53,20 +53,20 @@ class download_manager {
 		logger& log;
 	public:
 		void add(std::string url, fs::path filePath);
-		void run();
+		void add(download_base &download);
+		//void run();
 		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4);
 		void multirun(int batchSize);
 };
-namespace rx = rapidxml;
 class feed : public download_base {
 	public:
-		feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history);
+		feed(rapidxml::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history);
 		void parse();
-		const rx::xml_node<>& getConfigRef();
+		const rapidxml::xml_node<>& getConfigRef();
 		bool isNewHistory();
 		const std::string getHistory();
 	private:
-		const rx::xml_node<>& config_ref;
+		const rapidxml::xml_node<>& config_ref;
 		logger& log;
 		download_manager& downloads;
 	private:
