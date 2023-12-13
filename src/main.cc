@@ -2,6 +2,7 @@
 #include <download_handling.hpp>
 #include <config.h>
 //
+//
 #include <sys/select.h>
 #include <thread>
 #include <csignal> //reference for SIGINT & SIGSEGV
@@ -64,10 +65,9 @@ bool createFolderIfNotExist(fs::path folder) {
 }
 using namespace rssfeed;
 //
-
-int main(void) {
+void inititalize_program() {
 	static logger &log = logger::getInstance(logWARNING);
-	static download_manager &downloadManager = download_manager::getInstance();
+	log.send("starting initialization", logTRACE);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist", logERROR);
@@ -85,6 +85,12 @@ int main(void) {
 	//signal handlers that ensure we properly deconstruct our static variables on exit
 	std::signal(SIGSEGV, rssfeed::signal_handler);
 	std::signal(SIGINT, signal_handler);
+	log.send("initialization over", logTRACE);
+}
+int main(void) {
+	inititalize_program();
+	static logger &log = logger::getInstance(logWARNING);
+	static download_manager &downloadManager = download_manager::getInstance();
 	//loads the files... they both must live together
 	static rx::xml_document<> config_document;
 	static rx::file<> config_file(CONFIG_NAME);
@@ -138,6 +144,7 @@ int main(void) {
 			log.send("newHistory:" + current_feed.getHistory(),logDEBUG);
 		}
 	}
+	
 	//update the config
 	log.send("Saving the updated config file", logTRACE);
 	std::ofstream new_xml(CONFIG_NAME);
