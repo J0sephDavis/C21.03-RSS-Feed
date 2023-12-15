@@ -1,3 +1,4 @@
+#include <chrono>
 #include <logger.hpp>
 #include <download_handling.cpp>
 #include <config.h>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <filesystem>
+#include <future>
 //TODO: set in config.h
 #define CONFIG_NAME "rss-config.xml"
 //Data we need:
@@ -126,17 +128,53 @@ int main(void) {
 	}
 	//download the feeds channel
 	downloadManager.multirun();
-	std::vector<std::thread> parsing_feeds;
+	std::vector<std::future<std::vector<download_base>>> parsing_feeds;
 	//parse each feed in a thread
 	for (auto& current_feed : feeds) {
 		log.send("creating thread",logTRACE);
-		auto t = std::thread(&feed::parse,std::ref(current_feed));
+		std::future<std::vector<download_base>> t = std::async(std::launch::async, &feed::parse,std::ref(current_feed));
 		parsing_feeds.push_back(std::move(t));
 	}
 	//join threads
 	log.send("joining threads");
-	for (auto& t : parsing_feeds)
-		t.join();
+	while (!parsing_feeds.empty()) {
+		log.send(">checking feeds(" + std::to_string(parsing_feeds.size()) + ")");
+		for (auto iterator = parsing_feeds.begin(); iterator != parsing_feeds.end(); iterator++) {
+			auto future_feed = iterator;
+			//if the future value is ready (should mean thread is done.)
+			try {
+				if (future_feed->wait_for(std::chrono::milliseconds(200)) == std::future_status::ready) {
+					for (auto& val : future_feed->get()) {
+						log.send("added download manager");
+						downloadManager.add(val);
+					}
+					if (iterator == parsing_feeds.end()) {
+						parsing_feeds.erase(iterator);
+						break;
+					} else {
+						auto old_iterator = iterator;
+						iterator -=1;
+						parsing_feeds.erase(old_iterator);
+					}
+					log.send("REMOVED FUTURE");
+				}
+			}
+			catch(std::future_error& e) {
+				log.send("future_error:" + std::string(e.what()), logERROR);
+				log.send("future_feed == valid? :" + std::string((future_feed->valid())?"true":"false"),logERROR);
+					if (iterator == parsing_feeds.end()) {
+						parsing_feeds.erase(iterator);
+						break;
+					} else {
+						auto old_iterator = iterator;
+						iterator -=1;
+						parsing_feeds.erase(old_iterator);
+					}
+					log.send("REMOVED FUTURE - WRONGLY (should not have entered this state...)", logWARNING);
+			}
+		}
+	}
+	log.send("NO MORE FEEDS");
 	//download the files in baches
 	downloadManager.multirun();
 	log.send("checking feeds for updated histories", logTRACE);
