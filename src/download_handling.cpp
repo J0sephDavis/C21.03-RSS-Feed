@@ -182,6 +182,7 @@ void download_manager::multirun() {
 namespace rx = rapidxml;
 feed::feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history):
 	download_base(url, RSS_FOLDER + fileName),
+	downloadManager(download_manager::getInstance()),
 	config_ref(config_ptr),
 	feedHistory(history),
 	regexpression(regex)
