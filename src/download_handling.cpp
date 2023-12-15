@@ -82,12 +82,14 @@ download_manager::download_manager():
 void download_manager::add(download_base& download) {
 	log.send("download_manager::add",logTRACE);
 	//TODO determine if this avoids copy-construction
+	std::lock_guard<std::mutex> lock(queue_lock);
 	downloads.emplace(download);
 }
 std::vector<std::pair<curlpp::Easy *, FILE *>> download_manager::getRequests(size_t num_get) {
 	std::vector<std::pair<curlpp::Easy *, FILE *>> requests;
 	log.send("download_manager::getRequests",logTRACE);
-	std::lock_guard lock(queue_write);
+	//prevent the queue from being touched
+	std::lock_guard lock(queue_lock);
 	for (size_t i = 0; i < num_get && !downloads.empty(); i++) {
 		curlpp::Easy *request = new curlpp::Easy();
 		FILE* pagefile = fopen(downloads.front().getPath().c_str(), "wb");
@@ -224,7 +226,8 @@ void feed::parse() {
 				newHistoryTitle = entry_title;
 				log.send("set new history", logTRACE);
 			}
-			content_files.push_back(download_base(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url))));
+			auto tmp_file = download_base(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
+			downloadManager.add(tmp_file);
 			log.send("Added " + entry_title + " to downloads");
 		}
 	}
