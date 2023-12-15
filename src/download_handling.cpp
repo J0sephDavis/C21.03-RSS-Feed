@@ -107,7 +107,8 @@ std::vector<std::pair<curlpp::Easy *, FILE *>> download_manager::getRequests(siz
 	}
 	return (requests);
 }
-void download_manager::multirun(int batchSize) {
+void download_manager::multirun() {
+	const int batchSize = 4;
 	log.send("download_manager::multirun", logTRACE);
 	log.send("batch size: " + std::to_string(batchSize), logDEBUG);
 /*
@@ -180,8 +181,6 @@ namespace rx = rapidxml;
 feed::feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history):
 	download_base(url, RSS_FOLDER + fileName),
 	config_ref(config_ptr),
-	log(logger::getInstance()),
-//	downloads(download_manager::getInstance()),
 	feedHistory(history),
 	regexpression(regex)
 {
