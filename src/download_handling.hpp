@@ -1,10 +1,12 @@
 #ifndef RSS_DOWNLOAD_HANDLER
 #define RSS_DOWNLOAD_HANDLER
 
+#include <condition_variable>
 #include <config.h>
 //
 #include <iostream>
 #include <logger.hpp>
+#include <mutex>
 #include <regex.c>
 #include <utils.cpp>
 //
@@ -21,8 +23,12 @@
 #include <curlpp/OptionBase.hpp>
 #include <curlpp/Exception.hpp>
 //
+#include <thread>
 
 namespace rssfeed {
+class download_manager;
+class feed;
+class download_base;
 //BEGIN NAMESPACE
 /*
  * 	DOWNLOAD_BASE
@@ -50,12 +56,9 @@ class feed : public download_base {
 		const rapidxml::xml_node<>& getConfigRef();
 		bool isNewHistory();
 		const std::string getHistory();
-		//TODO create accessor function
-		std::vector<download_base> content_files;
 	private:
+		download_manager &downloadManager;
 		const rapidxml::xml_node<>& config_ref;
-		//download_manager& downloads;
-	private:
 		bool newHistory = false;
 		std::string newHistoryTitle;
 		const std::string feedHistory;
@@ -75,12 +78,13 @@ class download_manager {
 		//
 		void add(download_base &download);
 		void multirun();
+		//
 	private:
 		download_manager();
 		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4);
 		//
 		std::queue<download_base>  downloads;
-		std::mutex queue_write;
+		std::mutex queue_lock;
 		logger& log;
 };
 //END NAMESPACE
