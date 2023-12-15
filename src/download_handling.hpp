@@ -52,12 +52,11 @@ class download_base {
 class feed : public download_base {
 	public:
 		feed(rapidxml::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history);
-		void parse();
+		std::vector<download_base> parse();
 		const rapidxml::xml_node<>& getConfigRef();
 		bool isNewHistory();
 		const std::string getHistory();
 	private:
-		download_manager &downloadManager;
 		const rapidxml::xml_node<>& config_ref;
 		bool newHistory = false;
 		std::string newHistoryTitle;

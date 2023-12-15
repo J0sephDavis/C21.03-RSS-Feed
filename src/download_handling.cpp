@@ -182,7 +182,6 @@ void download_manager::multirun() {
 namespace rx = rapidxml;
 feed::feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, char* regex, std::string history):
 	download_base(url, RSS_FOLDER + fileName),
-	downloadManager(download_manager::getInstance()),
 	config_ref(config_ptr),
 	feedHistory(history),
 	regexpression(regex)
@@ -193,9 +192,10 @@ feed::feed(rx::xml_node<>& config_ptr, std::string fileName, std::string url, ch
 	log.send("HISTORY:" + feedHistory);
 }
 //only call if it has been downloaded
-void feed::parse() {
+std::vector<download_base> feed::parse() {
+	std::vector<download_base> rv_downloads;
 	log.send("feed::parse", logTRACE);
-	if (doneParsing) return;
+	if (doneParsing) return {};
 //2. parse the FEED
 	rx::xml_document<> feed;
 	rx::file<char> feedFile(getPath());
@@ -228,12 +228,13 @@ void feed::parse() {
 				log.send("set new history", logTRACE);
 			}
 			auto tmp_file = download_base(entry_url, fs::path(DOWNLOAD_FOLDER + url_to_filename(entry_url)));
-			downloadManager.add(tmp_file);
+			rv_downloads.push_back(std::move(tmp_file));
 			log.send("Added " + entry_title + " to downloads");
 		}
 	}
 	feed.clear();
 	doneParsing = true;
+	return rv_downloads;
 }
 //returns the pointer to the xml child in the config relating to this feed
 const rx::xml_node<>& feed::getConfigRef() {
