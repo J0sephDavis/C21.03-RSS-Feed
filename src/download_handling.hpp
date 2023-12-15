@@ -21,7 +21,6 @@
 #include <curlpp/OptionBase.hpp>
 #include <curlpp/Exception.hpp>
 //
-#include <thread>
 
 namespace rssfeed {
 //BEGIN NAMESPACE
@@ -36,8 +35,8 @@ class download_base {
 		bool fetch();
 		const fs::path getPath();
 		const std::string getURL();
-	private:
-		logger& log;
+	protected:
+		logger &log;
 		const std::string url;
 		fs::path filePath;
 };
@@ -55,7 +54,6 @@ class feed : public download_base {
 		std::vector<download_base> content_files;
 	private:
 		const rapidxml::xml_node<>& config_ref;
-		logger& log;
 		//download_manager& downloads;
 	private:
 		bool newHistory = false;
@@ -74,16 +72,16 @@ class download_manager {
 		 download_manager(download_manager const &) = delete;
 		 void operator=(download_manager const &) = delete;
 		~download_manager();
+		//
+		void add(download_base &download);
+		void multirun();
 	private:
 		download_manager();
-	private:
+		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4);
+		//
 		std::queue<download_base>  downloads;
 		std::mutex queue_write;
 		logger& log;
-	public:
-		void add(download_base &download);
-		std::vector<std::pair<curlpp::Easy *, FILE *>> getRequests(size_t num_get = 4);
-		void multirun(int batchSize);
 };
 //END NAMESPACE
 }
