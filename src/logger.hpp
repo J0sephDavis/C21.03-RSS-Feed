@@ -42,6 +42,7 @@ class logger {
 			const std::string log_suffix = ".log";
 #define logs_folder_len 7
 #define timestamp_len 16
+			//TODO: size may be errenous, what is the need of the lgs_folder, prefix, & suffix, they are not used in this function.
 			std::string datetime(logs_folder_len + timestamp_len + log_prefix.size() + log_suffix.size() + 10
 					,0
 			);
@@ -112,7 +113,6 @@ class logger {
 				messages.push(std::move(tmp_output));
 			}
 		}
-
 };
 //end namespace
 }
