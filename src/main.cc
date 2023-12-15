@@ -88,6 +88,7 @@ void inititalize_program() {
 	std::signal(SIGINT, signal_handler);
 	log.send("initialization over", logTRACE);
 }
+
 int main(void) {
 	inititalize_program();
 	static logger &log = logger::getInstance(logWARNING);
@@ -116,15 +117,15 @@ int main(void) {
 		char* regexpression = item_node->first_node("expr")->value();
 		try {
 			auto tmp = feed(*item_node, configFeedName, url, regexpression, feedHistory);
-			downloadManager.add(url, tmp.getPath());
 			feeds.emplace_back(std::move(tmp));
+			downloadManager.add(feeds.back());
 			log.send("Added feed() to vector & download manager", logTRACE);
 		} catch(std::runtime_error &e) {
 			log.send(e.what(), logERROR);
 		}
 	}
 	//download the feeds channel
-	downloadManager.multirun(4);
+	downloadManager.multirun();
 	std::vector<std::thread> parsing_feeds;
 	//parse each feed in a thread
 	for (auto& current_feed : feeds) {
@@ -137,7 +138,7 @@ int main(void) {
 	for (auto& t : parsing_feeds)
 		t.join();
 	//download the files in baches
-	downloadManager.multirun(4);
+	downloadManager.multirun();
 	log.send("checking feeds for updated histories", logTRACE);
 	for (auto& current_feed : feeds) {
 		if (current_feed.isNewHistory()) {
