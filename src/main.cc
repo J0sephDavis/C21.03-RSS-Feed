@@ -69,7 +69,7 @@ using namespace rssfeed;
 void inititalize_program() {
 	(void)write_data;
 	static logger &log = logger::getInstance(logTRACE);
-	log.send("starting initialization", logTRACE);
+	log.send("initializing", logTRACE);
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
 		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist", logERROR);
@@ -87,7 +87,7 @@ void inititalize_program() {
 	//signal handlers that ensure we properly deconstruct our static variables on exit
 	std::signal(SIGSEGV, rssfeed::signal_handler);
 	std::signal(SIGINT, signal_handler);
-	log.send("initialization over", logTRACE);
+	log.send("initialized", logTRACE);
 }
 
 int main(void) {
@@ -116,35 +116,30 @@ int main(void) {
 		std::string url = item_node->first_node("feed-url")->first_node()->value();
 		std::string feedHistory = item_node->first_node("history")->value();
 		char* regexpression = item_node->first_node("expr")->value();
-		try {
-			auto tmp = feed(*item_node, configFeedName, url, regexpression, feedHistory);
-			feeds.emplace_back(std::move(tmp));
-			downloadManager.add(feeds.back());
-			log.send("Added feed() to vector & download manager", logTRACE);
-		} catch(std::runtime_error &e) {
-			log.send(e.what(), logERROR);
-		}
+
+		auto tmp = feed(*item_node, configFeedName, url, regexpression, feedHistory);
+		feeds.emplace_back(std::move(tmp));
+		downloadManager.add(feeds.back());
 	}
 	//download the feeds channel
 	downloadManager.multirun();
 	std::vector<std::future<std::vector<download_base>>> parsing_feeds;
 	//parse each feed in a thread
+	log.send("split into threads", logTRACE);
 	for (auto& current_feed : feeds) {
-		log.send("creating thread",logTRACE);
 		std::future<std::vector<download_base>> t = std::async(std::launch::async, &feed::parse,std::ref(current_feed));
 		parsing_feeds.push_back(std::move(t));
 	}
 	//join threads
-	log.send("joining threads");
 	while (!parsing_feeds.empty()) {
-		log.send(">checking feeds(" + std::to_string(parsing_feeds.size()) + ")");
+		log.send("waiting for " + std::to_string(parsing_feeds.size()) + " threads to return", logTRACE);
 		for (auto iterator = parsing_feeds.begin(); iterator != parsing_feeds.end(); iterator++) {
 			auto future_feed = iterator;
 			//if the future value is ready (should mean thread is done.)
 			try {
 				if (future_feed->wait_for(std::chrono::milliseconds(200)) == std::future_status::ready) {
+					log.send("receiving future response", logTRACE);
 					for (auto& val : future_feed->get()) {
-						log.send("added download manager");
 						downloadManager.add(val);
 					}
 					if (iterator == parsing_feeds.end()) {
@@ -155,7 +150,7 @@ int main(void) {
 						iterator -=1;
 						parsing_feeds.erase(old_iterator);
 					}
-					log.send("REMOVED FUTURE");
+					log.send("removed future",logTRACE);
 				}
 			}
 			catch(std::future_error& e) {
@@ -173,10 +168,10 @@ int main(void) {
 			}
 		}
 	}
-	log.send("NO MORE FEEDS");
+	log.send("threads returned", logTRACE);
 	//download the files in baches
 	downloadManager.multirun();
-	log.send("checking feeds for updated histories", logTRACE);
+	log.send("check for updated histories", logTRACE);
 	for (auto& current_feed : feeds) {
 		if (current_feed.isNewHistory()) {
 			current_feed.getConfigRef().first_node("history")->first_node()->value(config_document.allocate_string(current_feed.getHistory().c_str()));
