@@ -31,7 +31,7 @@
  * 		<title>title of the feed or whatever - this is probably just for us</title>
  * 		<feedFileName>FileName</feedFileName>
  * 		<feed-url><![CDATA[https://examples.com/RSS]]</feed-url>
- * 		<expr>
+ * 		<expr>regex here</expre>
  * 		<history>title of the last downloaded rss entry</history>
  * 	</item>
  * 	...ad infinitum
@@ -170,7 +170,7 @@ int main(void) {
 						iterator -=1;
 						parsing_feeds.erase(old_iterator);
 					}
-					log.send("REMOVED FUTURE - WRONGLY (should not have entered this state...)", logWARNING);
+				log.send("REMOVED FUTURE - WRONGLY (should not have entered this state...)", logWARNING);
 			}
 		}
 	}
