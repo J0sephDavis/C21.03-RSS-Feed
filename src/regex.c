@@ -1,3 +1,5 @@
+#ifndef regex_c
+#define regex_c
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -460,3 +462,4 @@ bool m_alphanum(regex instance, const char* text) {
 		return m_here(re_getNext(instance), text+1);
 	return false;
 }
+#endif

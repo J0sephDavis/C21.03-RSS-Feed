@@ -2,5 +2,8 @@
 #define RSS_FEED_CONFIG
 
 #cmakedefine PROJECT_VERSION "@PROJECT_VERSION@"
+#cmakedefine RSS_FOLDER "@RSS_FOLDER@"
+#cmakedefine LOG_FOLDER "@LOG_FOLDER@"
+#cmakedefine DOWNLOAD_FOLDER "@DOWNLOAD_FOLDER@"
 
 #endif
