@@ -42,7 +42,6 @@
 //TODO: maintain a list of files that failed to download. Try to download them again before logging them and quitting
 //TODO: remove regex? might not be needed if the RSS is filtered right
 //TODO: modify the download class to only enforce on rssContents, not when we download other files(like feeds which must be clobbered)
-//TODO: Work with/around rate-limits to 
 
 namespace rssfeed {
 /*-------------------- BEGIN RSS FEED NAMESPACE --------------------*/
