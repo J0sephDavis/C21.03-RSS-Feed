@@ -100,7 +100,7 @@ class logger {
 				std::ostringstream tmp_output;
 				std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 				//each log will be "TIME LEVEL MESSAGE"
-				tmp_output << "\n-" << std::put_time(std::localtime(&time),"%c");
+				tmp_output << "\n." << std::put_time(std::localtime(&time),"%H:%M:%S");
 				tmp_output << "[" << levelString(level)  << "]:\t";
 				tmp_output << message;
 //#if COUT_LOG

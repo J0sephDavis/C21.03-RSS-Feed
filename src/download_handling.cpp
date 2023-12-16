@@ -234,6 +234,7 @@ std::vector<download_base> feed::parse() {
 	}
 	feed.clear();
 	doneParsing = true;
+	log.send("feed::parse - return", logTRACE);
 	return rv_downloads;
 }
 //returns the pointer to the xml child in the config relating to this feed
