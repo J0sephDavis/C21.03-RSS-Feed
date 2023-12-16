@@ -40,12 +40,8 @@ class logger {
 			std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 			const std::string log_prefix = "rss-feed-";
 			const std::string log_suffix = ".log";
-#define logs_folder_len 7
 #define timestamp_len 16
-			//TODO: size may be errenous, what is the need of the lgs_folder, prefix, & suffix, they are not used in this function.
-			std::string datetime(logs_folder_len + timestamp_len + log_prefix.size() + log_suffix.size() + 10
-					,0
-			);
+			std::string datetime(timestamp_len,0);
 			//https://stackoverflow.com/questions/28977585/how-to-get-put-time-into-a-variable
 			datetime.resize(std::strftime(&datetime[0], datetime.size(), "%Y-%m-%d_%H-%M", std::localtime(&time)));
 			std::string fileName = LOG_FOLDER + log_prefix + datetime + log_suffix;
