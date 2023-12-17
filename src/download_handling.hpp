@@ -42,7 +42,6 @@ class download_base {
 		const fs::path getPath();
 		const std::string getURL();
 	protected:
-		logger &log;
 		const std::string url;
 		fs::path filePath;
 };
@@ -84,7 +83,6 @@ class download_manager {
 		//
 		std::queue<download_base>  downloads;
 		std::mutex queue_lock;
-		logger& log;
 };
 //END NAMESPACE
 }

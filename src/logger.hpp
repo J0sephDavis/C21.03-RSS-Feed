@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 enum logLevel_t {
 	logDEBUG, 	//
 	logTRACE, 	//trace exeuction across project. What logic was done
-	logWARNING, 	//Things that might have caused problems but don't affect the end functionality of the system
+	logWARN, 	//Things that might have caused problems but don't affect the end functionality of the system
 	logINFO, 	//In gist, what has been/is being done
 	logERROR 	//a real problem that is detrimental to the functionality of the system.
 };
@@ -56,6 +56,21 @@ class logger {
 			logFile << os.str();
 			logFile.close();
 		}
+		inline void trace(std::string message) {
+			send(std::move(message), logTRACE);
+		}
+		inline void debug(std::string message) {
+			send(std::move(message), logDEBUG);
+		}
+		inline void info(std::string message) {
+			send(std::move(message), logINFO);
+		}
+		inline void warn(std::string message) {
+			send(std::move(message), logWARN);
+		}
+		inline void error(std::string message) {
+			send(std::move(message), logERROR);
+		}
 	private:
 		logger(logLevel_t level):
 			loggerLevel(level) {
@@ -70,8 +85,8 @@ class logger {
 				return "DEBUG";
 			if (level == logINFO)
 				return "INFO";
-			if (level == logWARNING)
-				return "WARNING";
+			if (level == logWARN)
+				return "WARN";
 			if (level == logERROR)
 				return "ERROR";
 			return "unknown-loglevel";
@@ -84,14 +99,6 @@ class logger {
 //				std::cout << "test:" << msg.str();
 			}
 		}
-	private:
-		logLevel_t loggerLevel;
-		//the actual output stream
-		std::ostringstream os;
-		std::queue<std::ostringstream>  messages;
-		std::mutex queue_write;
-	public:
-		//sends a message to the log
 		void send(std::string message, logLevel_t level = logINFO) {
 			if (messages.size() > 10) clear_queue();
 			//only print if we are >= to the logger level
@@ -103,13 +110,19 @@ class logger {
 				tmp_output << "\n." << std::put_time(std::localtime(&time),"%H:%M:%S");
 				tmp_output << "[" << levelString(level)  << "]:\t";
 				tmp_output << message;
-//#if COUT_LOG
 				std::cout << tmp_output.str();
-//#endif
 				messages.push(std::move(tmp_output));
 			}
 		}
+	private:
+		logLevel_t loggerLevel;
+		//the actual output stream
+		std::ostringstream os;
+		std::queue<std::ostringstream>  messages;
+		std::mutex queue_write;
+		//sends a message to the log
 };
+static logger& log = logger::getInstance(logTRACE);
 //end namespace
 }
 #endif

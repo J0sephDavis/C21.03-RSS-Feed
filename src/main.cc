@@ -51,12 +51,12 @@ namespace rx = rapidxml;
 bool createFolderIfNotExist(fs::path folder) {
 	static logger& log = logger::getInstance();
 	if(!fs::exists(folder)) {
-		log.send(folder.string() + " does not exist. Attempting to create.", logWARNING);
+		log.warn(folder.string() + " does not exist. Attempting to create.");
 		try {
 			fs::create_directory(folder);
-			log.send("Created folder", logINFO);
+			log.info("Created folder");
 		} catch (fs::filesystem_error &e) {
-			log.send("Failed to create folder(" + folder.string() + ")\n" + e.what(),logERROR);
+			log.error("Failed to create folder(" + folder.string() + ")\n" + e.what());
 			return false;
 		}
 	}
@@ -68,47 +68,47 @@ using namespace rssfeed;
 //
 void inititalize_program() {
 	(void)write_data;
-	static logger &log = logger::getInstance(logTRACE);
-	log.send("initializing", logTRACE);
+//	static logger &log = logger::getInstance(logTRACE);
+	log.trace("initializing");
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
-		log.send("CONFIG: " + std::string(CONFIG_NAME) + "does not exist", logERROR);
-		log.send("Quitting...");
+		log.error("CONFIG: " + std::string(CONFIG_NAME) + "does not exist");
+		log.info("Quitting...");
 		exit(EXIT_FAILURE);
 	}
 	if(!createFolderIfNotExist(RSS_FOLDER)) {
-		log.send("Quitting...");
+		log.info("Quitting...");
 		exit(EXIT_FAILURE);
 	}
 	if(!createFolderIfNotExist(DOWNLOAD_FOLDER)) {
-		log.send("Quitting...");
+		log.info("Quitting...");
 		exit(EXIT_FAILURE);
 	}
 	//signal handlers that ensure we properly deconstruct our static variables on exit
 	std::signal(SIGSEGV, rssfeed::signal_handler);
 	std::signal(SIGINT, signal_handler);
-	log.send("initialized", logTRACE);
+	log.trace("initialized");
 }
 
 int main(void) {
 	inititalize_program();
-	static logger &log = logger::getInstance(logWARNING);
+//	static logger &log = logger::getInstance();
 	static download_manager &downloadManager = download_manager::getInstance();
 	//config_document & config_file must live & die with the program. Consider placing them into a static class or struct, we rely on them being static such that they are cleaned up with exit(...)
 	static rx::xml_document<> config_document;
 	static rx::file<> config_file(CONFIG_NAME);
 	try {
-		log.send("Parsing config document", logTRACE);
+		log.trace("Parsing config document");
 		config_document.parse<0>(config_file.data());
 	}
 	catch (rx::parse_error &e) {
-		log.send("Failed to parse config:" + std::string(e.what()), logERROR);
+		log.error("Failed to parse config:" + std::string(e.what()));
 		exit(EXIT_FAILURE);
 	}
 
 	//pointers to each config node
 	std::vector<feed> feeds;
-	log.send("Collect entries from the config", logTRACE);
+	log.trace("Collect entries from the config");
 	for (auto item_node = config_document.first_node()->first_node("item");
 			item_node;
 			item_node = item_node->next_sibling()) {
@@ -125,20 +125,20 @@ int main(void) {
 	downloadManager.multirun();
 	std::vector<std::future<std::vector<download_base>>> parsing_feeds;
 	//parse each feed in a thread
-	log.send("split into threads", logTRACE);
+	log.trace("split into threads");
 	for (auto& current_feed : feeds) {
 		std::future<std::vector<download_base>> t = std::async(std::launch::async, &feed::parse,std::ref(current_feed));
 		parsing_feeds.push_back(std::move(t));
 	}
 	//join threads
 	while (!parsing_feeds.empty()) {
-		log.send("waiting for " + std::to_string(parsing_feeds.size()) + " threads to return", logTRACE);
+		log.trace("waiting for " + std::to_string(parsing_feeds.size()) + " threads to return");
 		for (auto iterator = parsing_feeds.begin(); iterator != parsing_feeds.end(); iterator++) {
 			auto future_feed = iterator;
 			//if the future value is ready (should mean thread is done.)
 			try {
 				if (future_feed->wait_for(std::chrono::milliseconds(200)) == std::future_status::ready) {
-					log.send("receiving future response", logTRACE);
+					log.trace("receiving future response");
 					for (auto& val : future_feed->get()) {
 						downloadManager.add(val);
 					}
@@ -150,12 +150,12 @@ int main(void) {
 						iterator -=1;
 						parsing_feeds.erase(old_iterator);
 					}
-					log.send("removed future",logTRACE);
+					log.trace("removed future");
 				}
 			}
 			catch(std::future_error& e) {
-				log.send("future_error:" + std::string(e.what()), logERROR);
-				log.send("future_feed == valid? :" + std::string((future_feed->valid())?"true":"false"),logERROR);
+				log.error("future_error:" + std::string(e.what()));
+				log.error("future_feed == valid? :" + std::string((future_feed->valid())?"true":"false"));
 					if (iterator == parsing_feeds.end()) {
 						parsing_feeds.erase(iterator);
 						break;
@@ -164,28 +164,28 @@ int main(void) {
 						iterator -=1;
 						parsing_feeds.erase(old_iterator);
 					}
-				log.send("REMOVED FUTURE - WRONGLY (should not have entered this state...)", logWARNING);
+				log.warn("REMOVED FUTURE - WRONGLY (should not have entered this state...)");
 			}
 		}
 	}
-	log.send("threads returned", logTRACE);
+	log.trace("threads returned");
 	//download the files in baches
 	downloadManager.multirun();
-	log.send("check for updated histories", logTRACE);
+	log.trace("check for updated histories");
 	for (auto& current_feed : feeds) {
 		if (current_feed.isNewHistory()) {
 			current_feed.getConfigRef().first_node("history")->first_node()->value(config_document.allocate_string(current_feed.getHistory().c_str()));
-			log.send("Updated history",logTRACE);
-			log.send("newHistory:" + current_feed.getHistory(),logDEBUG);
+			log.trace("Updated history");
+			log.debug("newHistory:" + current_feed.getHistory());
 		}
 	}
 	
 	//update the config
-	log.send("Saving the updated config file", logTRACE);
+	log.trace("Saving the updated config file");
 	std::ofstream new_xml(CONFIG_NAME);
 	new_xml << config_document;
 	new_xml.close();
-	log.send("Config file saved", logTRACE);
+	log.trace("Config file saved");
 	config_document.clear();
 	exit(EXIT_SUCCESS);
 }
