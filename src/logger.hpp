@@ -56,6 +56,11 @@ class logger {
 			logFile << os.str();
 			logFile.close();
 		}
+		/*
+		 * If you want to disable any of these log levels, such that they do not get compiled.
+		 * Replace the send(...) with a (void)message. Then the compiler should understand
+		 * that this code is pointless, whereupon it will ignore it.
+		 * */
 		inline void trace(std::string message) {
 			send(std::move(message), logTRACE);
 		}
@@ -96,9 +101,9 @@ class logger {
 			for (; !messages.empty(); messages.pop()) {
 				auto& msg = messages.front();
 				os << msg.str();
-//				std::cout << "test:" << msg.str();
 			}
 		}
+		//sends a message to the log
 		void send(std::string message, logLevel_t level = logINFO) {
 			if (messages.size() > 10) clear_queue();
 			//only print if we are >= to the logger level
@@ -110,7 +115,9 @@ class logger {
 				tmp_output << "\n." << std::put_time(std::localtime(&time),"%H:%M:%S");
 				tmp_output << "[" << levelString(level)  << "]:\t";
 				tmp_output << message;
+#ifdef COUT_LOG
 				std::cout << tmp_output.str();
+#endif
 				messages.push(std::move(tmp_output));
 			}
 		}
@@ -120,7 +127,6 @@ class logger {
 		std::ostringstream os;
 		std::queue<std::ostringstream>  messages;
 		std::mutex queue_write;
-		//sends a message to the log
 };
 static logger& log = logger::getInstance(logTRACE);
 //end namespace
