@@ -16,10 +16,8 @@ bool download_base::fetch() {
 	log.trace("download_base::fetch");
 	log.debug("url:" + url + "\tpath: " + filePath.string());
 	if(fs::exists(filePath)) {
+		//This doesn't really matter when its the FEED begin overwritten, otherwise it could matter
 		log.warn("FILE ALREADY EXISTS");
-#if !CLOBBER_FLAG
-		return false;
-#endif
 	}
 	//TODO: handle fclose() & returns in a clean manner
 	//this section of code somewhat irks me. Not the curlpp,
