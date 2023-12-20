@@ -50,7 +50,7 @@ class logger {
 				fs::create_directory(LOG_FOLDER);
 			}
 			//
-			std::cout << "log file=" << fileName << std::endl;
+			std::cout << "\nlog file=" << fileName << std::endl;
 			std::ofstream logFile(fileName);
 			clear_queue();
 			logFile << os.str();
