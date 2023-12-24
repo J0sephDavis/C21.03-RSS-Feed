@@ -17,11 +17,11 @@ logger::~logger() {
 	std::time_t time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	const std::string log_prefix = "rss-feed-";
 	const std::string log_suffix = ".log";
-#define timestamp_len 16
-	std::string datetime(timestamp_len,0);
-	//https://stackoverflow.com/questions/28977585/how-to-get-put-time-into-a-variable
-	datetime.resize(std::strftime(&datetime[0], datetime.size(), "%Y-%m-%d_%H-%M", std::localtime(&time)));
-	std::string fileName = LOG_FOLDER + log_prefix + datetime + log_suffix;
+	//
+	std::stringstream datetime;
+	datetime << std::put_time(std::localtime(&time), "%Y-%m-%d_%H:%M");
+	//
+	std::string fileName = LOG_FOLDER + log_prefix + datetime.str() + log_suffix;
 	if(!fs::exists(LOG_FOLDER)) {
 		//we don't catch the error, let it fail...
 		fs::create_directory(LOG_FOLDER);
