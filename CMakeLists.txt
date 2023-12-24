@@ -9,7 +9,6 @@ add_executable(RSS-Feed
 	main.cc
 )
 
-
 add_subdirectory(c1402-regex)
 add_subdirectory(curlpp_v81)
 target_include_directories(RSS-Feed
