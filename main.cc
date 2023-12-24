@@ -48,7 +48,6 @@ namespace fs = std::filesystem;
 namespace rx = rapidxml;
 //checks if a folder exists, if not it attempts to create the folder. returns true on success
 bool createFolderIfNotExist(fs::path folder) {
-	static logger& log = logger::getInstance();
 	if(!fs::exists(folder)) {
 		log.warn(folder.string() + " does not exist. Attempting to create.");
 		try {
@@ -67,7 +66,6 @@ using namespace rssfeed;
 //
 void inititalize_program() {
 	(void)write_data;
-//	static logger &log = logger::getInstance(logTRACE);
 	log.trace("initializing");
 	if (!fs::exists(CONFIG_NAME)) {
 		std::cout << "PLEASE POPULATE: " << CONFIG_NAME << "\n";
@@ -91,7 +89,6 @@ void inititalize_program() {
 
 int main(void) {
 	inititalize_program();
-//	static logger &log = logger::getInstance();
 	static download_manager &downloadManager = download_manager::getInstance();
 	//config_document & config_file must live & die with the program. Consider placing them into a static class or struct, we rely on them being static such that they are cleaned up with exit(...)
 	static rx::xml_document<> config_document;
