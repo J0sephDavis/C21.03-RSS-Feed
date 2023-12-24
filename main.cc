@@ -18,8 +18,6 @@
 #include <tuple>
 #include <filesystem>
 #include <future>
-//TODO: set in config.h
-#define CONFIG_NAME "rss-config.xml"
 //Data we need:
 //Per title: (each an object in the XML file or possibly their own XML files) 
 // 	1. The regular expression to match

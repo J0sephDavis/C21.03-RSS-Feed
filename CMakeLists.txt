@@ -6,11 +6,11 @@ project(RSS-Feed
   VERSION 1.1.3
 )
 add_executable(RSS-Feed 
-	src/main.cc
+	main.cc
 )
 add_subdirectory(curlpp_v81)
 target_include_directories(RSS-Feed
-	PRIVATE src rapidxml-1.13 curlpp_v81
+	PRIVATE . rapidxml-1.13 curlpp_v81
 	"${PROJECT_BINARY_DIR}"
 )
 target_link_libraries(RSS-Feed 
@@ -28,10 +28,11 @@ else()
 endif()
 
 #for config.h
-set(LOG_FOLDER "${PROJECT_SOURCE_DIR}/build/logs/")
-set(RSS_FOLDER "${PROJECT_SOURCE_DIR}/build/rss_feeds/")
-set(DOWNLOAD_FOLDER "${PROJECT_SOURCE_DIR}/build/downloads/")
-configure_file("${PROJECT_SOURCE_DIR}/src/config.h.in" "config.h" @ONLY)
+set(LOG_FOLDER "${PROJECT_BINARY_DIR}/../data/logs/")
+set(RSS_FOLDER "${PROJECT_BINARY_DIR}/../data/rss_feeds/")
+set(DOWNLOAD_FOLDER "${PROJECT_BINARY_DIR}/../data/downloads/")
+set(CONFIG_NAME "${PROJECT_BINARY_DIR}/../data/rss-config.xml")
+configure_file("config.h.in" "config.h" @ONLY)
 #https://stackoverflow.com/questions/34143265/undefined-reference-to-symbol-pthread-createglibc-2-2-5
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
