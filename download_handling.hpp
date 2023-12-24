@@ -7,7 +7,7 @@
 #include <iostream>
 #include <logger.hpp>
 #include <mutex>
-#include <regex.c>
+#include <C1402_regex.cc>
 #include <utils.cpp>
 //
 #include <rapidxml.hpp>

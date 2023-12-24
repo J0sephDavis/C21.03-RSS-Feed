@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.13)
+cmake_minimum_required (VERSION 3.18)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) 
 
 project(RSS-Feed
@@ -8,13 +8,17 @@ project(RSS-Feed
 add_executable(RSS-Feed 
 	main.cc
 )
+
+
+add_subdirectory(c1402-regex)
 add_subdirectory(curlpp_v81)
 target_include_directories(RSS-Feed
-	PRIVATE . rapidxml-1.13 curlpp_v81
+	PRIVATE . rapidxml-1.13 curlpp_v81 c1402-regex
 	"${PROJECT_BINARY_DIR}"
 )
 target_link_libraries(RSS-Feed 
 	PRIVATE curlpp
+		regex
 	INTERFACE rapidxml
 )
 
