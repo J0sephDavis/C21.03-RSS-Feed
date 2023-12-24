@@ -46,4 +46,4 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 set_target_properties(RSS-Feed PROPERTIES CXX_STANDARD 20)
-target_compile_options(RSS-Feed PRIVATE -Wall -Werror -Wextra -Wpedantic -lpthread)
+target_compile_options(RSS-Feed PRIVATE -Werror -Wextra -Wpedantic -lpthread)
