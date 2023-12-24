@@ -8,17 +8,37 @@ project(RSS-Feed
 add_executable(RSS-Feed 
 	main.cc
 )
+add_library(RSS-utils
+	include/download_handling.cpp
+	include/download_handling.hpp
+	include/logger.hpp
+	include/logger.cpp
+	include/utils.cpp
+)
 
 add_subdirectory(c1402-regex)
 add_subdirectory(curlpp_v81)
-target_include_directories(RSS-Feed
-	PRIVATE . rapidxml-1.13 curlpp_v81 c1402-regex
+add_subdirectory(rapidxml-1.13)
+
+target_include_directories(RSS-Feed PUBLIC "${PROJECT_BINARY_DIR}")
+target_include_directories(RSS-utils
+	PUBLIC include rapidxml-1.13 curlpp_v81 c1402-regex
 	"${PROJECT_BINARY_DIR}"
 )
-target_link_libraries(RSS-Feed 
-	PRIVATE curlpp
-		regex
+target_link_libraries(RSS-utils
+	PUBLIC curlpp
+	regex
 	INTERFACE rapidxml
+)
+#target_include_directories(RSS-Feed
+#	PRIVATE include rapidxml-1.13 curlpp_v81 c1402-regex
+#	"${PROJECT_BINARY_DIR}"
+#)
+target_link_libraries(RSS-Feed 
+	PRIVATE RSS-utils
+	#		curlpp
+	#		regex
+	#INTERFACE rapidxml
 )
 
 option(PRINT_LOGS "Print Logs to STDOUT" OFF)
@@ -44,5 +64,7 @@ set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
+set_target_properties(RSS-utils PROPERTIES CXX_STANDARD 20)
 set_target_properties(RSS-Feed PROPERTIES CXX_STANDARD 20)
-target_compile_options(RSS-Feed PRIVATE -Werror -Wextra -Wpedantic -lpthread)
+target_compile_options(RSS-Feed PUBLIC -Werror -Wextra -Wpedantic -std=c++20)
+target_compile_options(RSS-utils PUBLIC -Werror -Wextra -Wpedantic -std=c++20)

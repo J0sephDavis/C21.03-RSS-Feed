@@ -26,6 +26,7 @@
 #include <thread>
 
 namespace rssfeed {
+	namespace fs = std::filesystem;
 class download_manager;
 class feed;
 class download_base;

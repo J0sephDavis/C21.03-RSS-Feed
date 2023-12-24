@@ -1,5 +1,6 @@
 #include <download_handling.hpp>
 namespace rssfeed {
+	namespace fs = std::filesystem;
 //download_base START
 download_base::download_base(std::string url,fs::path download_path) :
 	url(url)
