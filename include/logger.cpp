@@ -19,7 +19,7 @@ logger::~logger() {
 	const std::string log_suffix = ".log";
 	//
 	std::stringstream datetime;
-	datetime << std::put_time(std::localtime(&time), "%Y-%m-%d_%H:%M");
+	datetime << std::put_time(std::localtime(&time), "%Y-%m-%d_%H-%M");
 	//
 	std::string fileName = LOG_FOLDER + log_prefix + datetime.str() + log_suffix;
 	if(!fs::exists(LOG_FOLDER)) {
