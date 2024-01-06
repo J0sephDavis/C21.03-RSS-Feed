@@ -16,13 +16,13 @@ add_library(RSS-utils
 	include/utils.cpp
 )
 
-add_subdirectory(c1402-regex)
-add_subdirectory(curlpp_v81)
-add_subdirectory(rapidxml-1.13)
+add_subdirectory(include/c1402-regex)
+add_subdirectory(include/curlpp_v81)
+add_subdirectory(include/rapidxml-1.13)
 
 target_include_directories(RSS-Feed PUBLIC "${PROJECT_BINARY_DIR}")
 target_include_directories(RSS-utils
-	PUBLIC include rapidxml-1.13 curlpp_v81/include c1402-regex
+	PUBLIC include include/rapidxml-1.13 include/curlpp_v81/include include/c1402-regex
 	"${PROJECT_BINARY_DIR}"
 )
 target_link_libraries(RSS-utils
